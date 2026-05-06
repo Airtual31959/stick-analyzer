@@ -28,8 +28,12 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
+# 关键：必须在 import pyplot 之前设置后端为 Agg（无 GUI）
+# Agg 后端不会尝试创建窗口图标，避免 PyInstaller 打包后的 _tkinter.TclError
+# 同时内存释放更彻底，性能更好（我们只需要保存图片，不需要交互式显示）
 import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 from matplotlib import font_manager
 
 # 中文字体 - 自动检测系统可用中文字体
@@ -410,7 +414,11 @@ def plot_burst(m: dict, output_path: Path, title: str):
 
     plt.tight_layout()
     plt.savefig(output_path, dpi=110, bbox_inches="tight")
-    plt.close()
+    plt.close(fig)
+    # 显式释放 - 修复 v2.0 内存泄漏
+    del fig, axes
+    import gc
+    gc.collect()
 
 
 def plot_summary(events: list, output_path: Path):
@@ -469,7 +477,11 @@ def plot_summary(events: list, output_path: Path):
 
     plt.tight_layout()
     plt.savefig(output_path, dpi=110, bbox_inches="tight")
-    plt.close()
+    plt.close(fig)
+    # 显式释放 - 修复 v2.0 内存泄漏
+    del fig, axes
+    import gc
+    gc.collect()
 
 
 def generate_report(events: list, csv_path: Path,
