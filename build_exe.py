@@ -1,18 +1,25 @@
 """
 打包脚本（v2.0）
 ================================
-把所有 Python 模块打包成单个 StickAnalyzer.exe。
+把所有 Python 模块打包成 StickAnalyzer。
+
+两种模式（启动时会询问）：
+  1. onedir 模式（推荐）：打包为文件夹，启动快（3-8 秒），分发为 zip
+  2. onefile 模式：单个 EXE，启动慢（30-90 秒），双击即用
 
 使用方法：
     1. 确保已激活虚拟环境（如果用了 .venv）
     2. pip install pyinstaller
     3. python build_exe.py
 
-输出：dist/StickAnalyzer.exe
+输出：
+    onedir 模式 → dist/StickAnalyzer/StickAnalyzer.exe
+    onefile 模式 → dist/StickAnalyzer.exe
 """
 import subprocess
 import sys
 import os
+import shutil
 from pathlib import Path
 
 PROJECT_DIR = Path(__file__).parent.resolve()
@@ -36,7 +43,7 @@ HIDDEN_IMPORTS = [
     "pandas",
     "numpy",
     "PIL",
-    # tkinter（一般会自动包含，但稳妥起见加上）
+    # tkinter
     "tkinter",
     "tkinter.ttk",
     "tkinter.filedialog",
@@ -51,7 +58,6 @@ def check_dependencies():
     print("步骤 1：检查依赖")
     print("=" * 60)
 
-    # 检查 PyInstaller
     try:
         import PyInstaller
         print(f"[√] PyInstaller {PyInstaller.__version__}")
@@ -61,7 +67,6 @@ def check_dependencies():
                                "pyinstaller"])
         print("[√] PyInstaller 安装完成")
 
-    # 检查打包必需的依赖
     required = {
         "pygame": "pygame",
         "matplotlib": "matplotlib",
@@ -77,7 +82,6 @@ def check_dependencies():
             missing.append(pkg_name)
             print(f"[X] {import_name} 未安装")
 
-    # 检查可选依赖
     try:
         import XInput
         print(f"[√] XInput-Python（可选，已安装）")
@@ -119,35 +123,63 @@ def check_source_files():
     print()
 
 
-def build():
-    """执行打包"""
+def choose_mode() -> str:
+    """让用户选择打包模式"""
     print("=" * 60)
-    print("步骤 3：执行打包")
+    print("步骤 3：选择打包模式")
+    print("=" * 60)
+    print()
+    print("两种打包模式可选：")
+    print()
+    print("  [1] onedir 模式（推荐）⭐")
+    print("      - 打包为文件夹，包含 StickAnalyzer.exe 和 _internal/ 目录")
+    print("      - 启动速度：3-8 秒")
+    print("      - 杀软误报率低")
+    print("      - 分发方式：把整个 StickAnalyzer 文件夹打包成 zip 发给用户")
+    print("      - 用户解压后双击 StickAnalyzer.exe 即可")
+    print()
+    print("  [2] onefile 模式")
+    print("      - 打包为单个 EXE 文件")
+    print("      - 启动速度：30-90 秒（首次更慢，约 1 分钟）")
+    print("      - 杀软误报率较高")
+    print("      - 分发方式：直接发 EXE")
+    print("      - 用户双击 EXE 即可（但要等待解压）")
+    print()
+    while True:
+        choice = input("请选择 [1/2]，回车默认选 1: ").strip()
+        if choice == "" or choice == "1":
+            return "onedir"
+        if choice == "2":
+            return "onefile"
+        print("无效选项，请输入 1 或 2")
+
+
+def build(mode: str):
+    """执行打包"""
+    print()
+    print("=" * 60)
+    print(f"步骤 4：执行打包（{mode} 模式）")
     print("=" * 60)
 
-    # 平台分隔符
     sep = ";" if sys.platform == "win32" else ":"
 
     cmd = [
         sys.executable, "-m", "PyInstaller",
-        "--onefile",                  # 单文件 EXE
-        "--windowed",                 # 不显示控制台
+        f"--{mode}",                  # onefile 或 onedir
+        "--windowed",
         "--name=StickAnalyzer",
-        "--clean",                    # 清理临时文件
-        "--noconfirm",                # 覆盖输出
+        "--clean",
+        "--noconfirm",
     ]
 
-    # 隐式导入
     for imp in HIDDEN_IMPORTS:
         cmd.append(f"--hidden-import={imp}")
 
-    # 把所有子模块作为数据文件添加（这样 main_gui 的 import 才能找到它们）
     for mod in SUB_MODULES:
         path = PROJECT_DIR / mod
         if path.exists():
             cmd.append(f"--add-data={mod}{sep}.")
 
-    # 入口文件
     cmd.append("main_gui.py")
 
     print("[*] 命令:")
@@ -163,33 +195,72 @@ def build():
         sys.exit(1)
 
 
-def show_result():
+def show_result(mode: str):
     """显示结果"""
-    exe_path = PROJECT_DIR / "dist" / "StickAnalyzer.exe"
     print()
     print("=" * 60)
-    if exe_path.exists():
-        size_mb = exe_path.stat().st_size / 1024 / 1024
-        print(f"✅ 打包成功！")
-        print("=" * 60)
-        print(f"EXE 位置: {exe_path}")
-        print(f"文件大小: {size_mb:.1f} MB")
-        print()
-        print("使用说明：")
-        print("  • 直接双击 StickAnalyzer.exe 即可运行")
-        print("  • 第一次启动可能需要 5-15 秒（解压依赖到临时目录）")
-        print("  • 不需要在目标电脑安装 Python 或任何依赖")
-        print("  • 可以拷贝到任何 Windows 10/11 电脑使用")
-        print()
-        print("注意事项：")
-        print("  • 部分杀软可能误报（PyInstaller 打包的 EXE 常见问题）")
-        print("  • 如果被杀软删除，加入白名单即可")
-        print("  • 如果某些用户启动失败，报错信息会引导他们反馈")
-    else:
-        print(f"❌ EXE 未生成")
-        print("=" * 60)
-        print("请检查上方错误信息")
-        sys.exit(1)
+
+    if mode == "onefile":
+        exe_path = PROJECT_DIR / "dist" / "StickAnalyzer.exe"
+        if exe_path.exists():
+            size_mb = exe_path.stat().st_size / 1024 / 1024
+            print(f"✅ 打包成功！(onefile 模式)")
+            print("=" * 60)
+            print(f"EXE 位置: {exe_path}")
+            print(f"文件大小: {size_mb:.1f} MB")
+            print()
+            print("⚠ 注意：onefile 模式启动慢，第一次启动可能需要 30-90 秒")
+            print("   如果觉得太慢，建议用 onedir 模式重新打包")
+        else:
+            print("❌ EXE 未生成，请检查上方错误")
+            sys.exit(1)
+    else:  # onedir
+        out_dir = PROJECT_DIR / "dist" / "StickAnalyzer"
+        exe_path = out_dir / "StickAnalyzer.exe"
+        if exe_path.exists():
+            # 计算总目录大小
+            total_size = sum(f.stat().st_size for f in out_dir.rglob("*") if f.is_file())
+            size_mb = total_size / 1024 / 1024
+            file_count = sum(1 for _ in out_dir.rglob("*") if _.is_file())
+            print(f"✅ 打包成功！(onedir 模式 - 推荐)")
+            print("=" * 60)
+            print(f"输出目录: {out_dir}")
+            print(f"主程序: {exe_path}")
+            print(f"目录大小: {size_mb:.1f} MB（包含 {file_count} 个文件）")
+            print()
+            print("使用说明：")
+            print("  • 进入 dist/StickAnalyzer/ 文件夹")
+            print("  • 双击 StickAnalyzer.exe 即可运行")
+            print("  • 启动速度：3-8 秒")
+            print()
+            print("分发说明：")
+            print("  • 把整个 StickAnalyzer 文件夹打包成 zip")
+            print("  • 用户解压到任意位置，双击 StickAnalyzer.exe 运行")
+            print("  • 不要单独发 StickAnalyzer.exe，它需要 _internal/ 目录")
+            print()
+
+            # 提示用户是否自动打 zip
+            try:
+                choice = input("是否自动打包成 zip 方便分发？[y/N]: ").strip().lower()
+                if choice == "y":
+                    zip_path = PROJECT_DIR / "dist" / "StickAnalyzer.zip"
+                    print(f"[*] 正在创建 {zip_path}...")
+                    if zip_path.exists():
+                        zip_path.unlink()
+                    shutil.make_archive(
+                        str(zip_path.with_suffix("")),
+                        "zip",
+                        root_dir=str(PROJECT_DIR / "dist"),
+                        base_dir="StickAnalyzer"
+                    )
+                    if zip_path.exists():
+                        zip_size = zip_path.stat().st_size / 1024 / 1024
+                        print(f"[√] 已创建 {zip_path}（{zip_size:.1f} MB）")
+            except Exception as e:
+                print(f"[!] 自动打 zip 失败: {e}")
+        else:
+            print("❌ 输出目录或 EXE 未生成，请检查上方错误")
+            sys.exit(1)
 
 
 def main():
@@ -201,8 +272,9 @@ def main():
 
     check_dependencies()
     check_source_files()
-    build()
-    show_result()
+    mode = choose_mode()
+    build(mode)
+    show_result(mode)
 
 
 if __name__ == "__main__":
