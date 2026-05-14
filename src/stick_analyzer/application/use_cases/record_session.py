@@ -142,31 +142,35 @@ class RecordSession:
         if request.controller_info is None:
             raise RecordingInputError("未选择手柄")
 
-        self._stop_requested = False
         profile = self._resolve_profile(request.perf_profile)
-        self._writer.open(
-            request.output_path,
-            _build_file_metadata(request, profile.rate),
-            request.logical_buttons,
-        )
-        start_ns = self._clock.time_ns()
-        counters = _RecordingCounters()
-
+        # stop() 可能先于 execute() 抵达（GUI 线程竞态），本轮必须保留该请求；
+        # 执行结束后再清理，避免影响同一个 session 后续复用。
         try:
-            self._record_samples(request, profile, start_ns, counters, progress)
-        finally:
-            self._writer.close()
+            self._writer.open(
+                request.output_path,
+                _build_file_metadata(request, profile.rate),
+                request.logical_buttons,
+            )
+            start_ns = self._clock.time_ns()
+            counters = _RecordingCounters()
 
-        duration_s = (self._clock.time_ns() - start_ns) / 1_000_000_000
-        summary = counters.to_summary(
-            duration_s,
-            request.output_path,
-            request.noise_floor_x,
-            request.noise_floor_y,
-        )
-        if done is not None:
-            done(summary)
-        return summary
+            try:
+                self._record_samples(request, profile, start_ns, counters, progress)
+            finally:
+                self._writer.close()
+
+            duration_s = (self._clock.time_ns() - start_ns) / 1_000_000_000
+            summary = counters.to_summary(
+                duration_s,
+                request.output_path,
+                request.noise_floor_x,
+                request.noise_floor_y,
+            )
+            if done is not None:
+                done(summary)
+            return summary
+        finally:
+            self._stop_requested = False
 
     def _record_samples(
         self,

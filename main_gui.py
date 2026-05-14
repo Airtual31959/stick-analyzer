@@ -27,8 +27,8 @@ import sys
 import os
 import threading
 import subprocess
-import csv
 import time
+from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 
@@ -43,6 +43,14 @@ try:
         resolve_output_dir,
     )
     from stick_analyzer.application import AnalyzeRecording, AnalyzeRecordingRequest
+    from stick_analyzer.application import (
+        CalibrationRequest,
+        CalibrateController,
+        RecordSession,
+        RecordingInputError,
+        RecordSessionRequest,
+    )
+    from stick_analyzer.adapters.storage import CsvRecordingWriter
 except ModuleNotFoundError:
     from src.stick_analyzer.app_paths import (
         get_app_data_dir,
@@ -51,6 +59,14 @@ except ModuleNotFoundError:
         resolve_output_dir,
     )
     from src.stick_analyzer.application import AnalyzeRecording, AnalyzeRecordingRequest
+    from src.stick_analyzer.application import (
+        CalibrationRequest,
+        CalibrateController,
+        RecordSession,
+        RecordingInputError,
+        RecordSessionRequest,
+    )
+    from src.stick_analyzer.adapters.storage import CsvRecordingWriter
 
 # 引入控制器抽象层
 try:
@@ -80,6 +96,35 @@ def _import_analyzer():
         return analyzer_mod
     except ImportError:
         return None
+
+
+class _SystemClock:
+    def time_ns(self):
+        return time.time_ns()
+
+    def sleep(self, duration_s):
+        time.sleep(duration_s)
+
+
+class _CountingControllerReader:
+    def __init__(self, reader):
+        self._reader = reader
+        self.sample_count = 0
+
+    def read_state(self, controller_info):
+        state = self._reader.read_state(controller_info)
+        self.sample_count += 1
+        return state
+
+
+def _recording_progress_to_dict(progress):
+    return asdict(progress)
+
+
+def _recording_summary_to_dict(summary):
+    data = asdict(summary)
+    data["output"] = str(summary.output)
+    return data
 
 
 # ==================== AI 调参提示词模板 ====================
@@ -280,9 +325,8 @@ AI_PROMPT_TEMPLATE = """我在玩 FPS 游戏（如 Apex Legends），想让你�
 """
 # ===========================================================
 class StickRecorder:
-    """后台录制线程（使用 controller_backend 抽象层）"""
+    """GUI 后台线程包装器，录制业务委托给 RecordSession。"""
 
-    # 性能档位（采样率 Hz, GUI 更新间隔秒）
     PERF_PROFILES = {
         "high":   {"rate": 500, "gui_interval": 0.1, "label": "高精度（默认）"},
         "normal": {"rate": 250, "gui_interval": 0.2, "label": "平衡"},
@@ -294,9 +338,12 @@ class StickRecorder:
                  on_update, on_done,
                  perf_profile="high",
                  noise_floor_x=0.0, noise_floor_y=0.0,
-                 mark_button=None):
-        self.output_path = output_path
-        self.metadata = metadata
+                 mark_button=None,
+                 session_factory=None,
+                 writer_factory=None,
+                 clock=None):
+        self.output_path = Path(output_path)
+        self.metadata = dict(metadata)
         self.fire_button = fire_button       # 逻辑代码（如 RIGHT_SHOULDER）
         self.ads_button = ads_button
         self.controller_info = controller_info  # ControllerInfo
@@ -309,16 +356,22 @@ class StickRecorder:
         self.noise_floor_y = float(noise_floor_y)
         # [T2.1] 玩家手动标记按键（按一下打一个 "good" 标记到 CSV）
         self.mark_button = mark_button       # 逻辑代码或 None
-        self._stop_flag = False
+        self._session_factory = session_factory or RecordSession
+        self._writer_factory = writer_factory or CsvRecordingWriter
+        self._clock = clock or _SystemClock()
+        self._session = None
+        self._stop_requested = False
         self._thread = None
 
     def start(self):
-        self._stop_flag = False
+        self._stop_requested = False
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 
     def stop(self):
-        self._stop_flag = True
+        self._stop_requested = True
+        if self._session is not None:
+            self._session.stop()
 
     def _run(self):
         if cb is None:
@@ -331,165 +384,50 @@ class StickRecorder:
             return
 
         try:
-            csv_file = open(self.output_path, "w", newline="", encoding="utf-8")
-        except Exception as e:
+            writer = self._writer_factory()
+            self._session = self._session_factory(
+                self.controller_manager, self._clock, writer)
+            if self._stop_requested:
+                self._session.stop()
+            done_called = False
+
+            def handle_done(summary):
+                nonlocal done_called
+                done_called = True
+                self._handle_done(summary)
+
+            summary = self._session.execute(
+                self._build_request(),
+                progress=self._handle_progress,
+                done=handle_done)
+            if not done_called:
+                self._handle_done(summary)
+        except RecordingInputError as e:
+            self.on_done(False, str(e))
+        except OSError as e:
             self.on_done(False, f"无法创建文件: {e}")
-            return
+        except Exception as e:
+            self.on_done(False, f"录制过程中发生异常: {e}")
 
-        # 写元数据（包含控制器信息）
-        for k, v in self.metadata.items():
-            csv_file.write(f"# meta: {k}={v}\n")
-        csv_file.write(f"# meta: fire_button={self.fire_button}\n")
-        csv_file.write(f"# meta: ads_button={self.ads_button}\n")
-        csv_file.write(f"# meta: controller_name={self.controller_info.name}\n")
-        csv_file.write(f"# meta: controller_protocol={self.controller_info.protocol}\n")
-        csv_file.write(f"# meta: controller_layout={self.controller_info.layout}\n")
-        if self.controller_info.guid:
-            csv_file.write(f"# meta: controller_guid={self.controller_info.guid}\n")
-        # [T0.3] 写入硬件本底（用于分析时减除）
-        csv_file.write(f"# meta: noise_floor_x={self.noise_floor_x:.6f}\n")
-        csv_file.write(f"# meta: noise_floor_y={self.noise_floor_y:.6f}\n")
-        # [T0.2] 标称采样率（实际有效率由分析器统计）
-        profile_for_meta = self.PERF_PROFILES.get(self.perf_profile,
-                                                   self.PERF_PROFILES["high"])
-        csv_file.write(f"# meta: nominal_rate={profile_for_meta['rate']}\n")
-        csv_file.write(f"# meta: started={datetime.now().isoformat()}\n")
+    def _build_request(self):
+        return RecordSessionRequest(
+            output_path=self.output_path,
+            metadata=self.metadata,
+            fire_button=self.fire_button,
+            ads_button=self.ads_button,
+            mark_button=self.mark_button,
+            controller_info=self.controller_info,
+            perf_profile=self.perf_profile,
+            noise_floor_x=self.noise_floor_x,
+            noise_floor_y=self.noise_floor_y,
+            logical_buttons=cb.LOGICAL_BUTTONS,
+        )
 
-        # 按键列：用统一的逻辑代码作为列名（小写）
-        btn_columns = [f"btn_{b.lower()}" for b in cb.LOGICAL_BUTTONS]
-        writer = csv.writer(csv_file)
-        writer.writerow([
-            "timestamp_ns", "elapsed_s",
-            "lx", "ly", "rx", "ry",
-            "lt", "rt",
-        ] + btn_columns + ["fire", "ads", "mark"])
+    def _handle_progress(self, progress):
+        self.on_update(_recording_progress_to_dict(progress))
 
-        start_ns = time.time_ns()
-        sample_count = 0
-        fire_count = 0
-        ads_count = 0
-        # [T0.2] 重复帧统计：连续两帧 (rx,ry,lx,ly) 完全相同视为底层未更新
-        dup_frames = 0
-        last_signature = None
-        # [T2.1] 标记键状态：边沿触发，避免一直按住时连续标记
-        mark_count = 0
-        last_mark_pressed = False
-        # 根据性能档位决定采样率和 GUI 更新间隔
-        profile = self.PERF_PROFILES.get(self.perf_profile,
-                                          self.PERF_PROFILES["high"])
-        target_rate = profile["rate"]
-        gui_interval_s = profile["gui_interval"]
-        sample_interval_ns = int(1e9 / target_rate)
-        next_sample_ns = start_ns
-        last_update_ns = start_ns
-
-        try:
-            while not self._stop_flag:
-                now_ns = time.time_ns()
-
-                # 修复：用 sleep 让出 CPU（不再忙等待 spin loop）
-                wait_ns = next_sample_ns - now_ns
-                if wait_ns > 0:
-                    # 1ms 以上的等待用 sleep（让出 CPU）
-                    # 1ms 以下的剩余时间忽略，由调度器处理
-                    if wait_ns > 1_000_000:
-                        time.sleep(wait_ns / 1e9)
-                    now_ns = time.time_ns()
-
-                try:
-                    state = self.controller_manager.read_state(self.controller_info)
-                except Exception as e:
-                    print(f"[警告] 读取手柄失败: {e}")
-                    break
-
-                # 按键状态
-                buttons_dict = state.buttons
-                fire = bool(buttons_dict.get(self.fire_button, False))
-                ads = bool(buttons_dict.get(self.ads_button, False))
-
-                # [T2.1] 边沿检测：从未按 → 按下 = 一次标记事件
-                mark = ""
-                if self.mark_button:
-                    cur_mark = bool(buttons_dict.get(self.mark_button, False))
-                    if cur_mark and not last_mark_pressed:
-                        mark = "good"
-                        mark_count += 1
-                    last_mark_pressed = cur_mark
-
-                elapsed = (now_ns - start_ns) / 1e9
-
-                # [T0.2] 重复帧检测：6 位精度的轴值签名
-                cur_sig = (round(state.rx, 6), round(state.ry, 6),
-                           round(state.lx, 6), round(state.ly, 6))
-                if last_signature is not None and cur_sig == last_signature:
-                    dup_frames += 1
-                last_signature = cur_sig
-
-                row = [
-                    now_ns, f"{elapsed:.6f}",
-                    f"{state.lx:.5f}", f"{state.ly:.5f}",
-                    f"{state.rx:.5f}", f"{state.ry:.5f}",
-                    f"{state.lt:.4f}", f"{state.rt:.4f}",
-                ]
-                for b in cb.LOGICAL_BUTTONS:
-                    row.append(int(bool(buttons_dict.get(b, False))))
-                row.extend([int(fire), int(ads), mark])
-                writer.writerow(row)
-
-                sample_count += 1
-                if fire:
-                    fire_count += 1
-                if ads:
-                    ads_count += 1
-
-                # GUI 更新降频（根据性能档位）
-                if (now_ns - last_update_ns) / 1e9 > gui_interval_s:
-                    rate = sample_count / max(elapsed, 1e-6)
-                    # [T0.2] 实时算有效采样率
-                    dup_ratio = dup_frames / max(sample_count, 1)
-                    effective_rate = rate * (1.0 - dup_ratio)
-                    self.on_update({
-                        "elapsed": elapsed,
-                        "samples": sample_count,
-                        "rate": rate,
-                        "effective_rate": effective_rate,
-                        "dup_ratio": dup_ratio,
-                        "fire_pct": 100 * fire_count / max(sample_count, 1),
-                        "ads_pct": 100 * ads_count / max(sample_count, 1),
-                        "lx": state.lx, "ly": state.ly,
-                        "rx": state.rx, "ry": state.ry,
-                        "lt": state.lt, "rt": state.rt,
-                        "fire": fire, "ads": ads,
-                        "mark_count": mark_count,
-                        "just_marked": (mark == "good"),
-                    })
-                    last_update_ns = now_ns
-
-                next_sample_ns += sample_interval_ns
-                # 防止时间漂移过大（比如系统卡顿后），重新对齐
-                if next_sample_ns < now_ns:
-                    next_sample_ns = now_ns + sample_interval_ns
-
-        finally:
-            csv_file.close()
-            elapsed_total = (time.time_ns() - start_ns) / 1e9
-            rate = sample_count / max(elapsed_total, 1e-6)
-            dup_ratio = dup_frames / max(sample_count, 1)
-            summary = {
-                "duration": elapsed_total,
-                "samples": sample_count,
-                "rate": rate,
-                "effective_rate": rate * (1.0 - dup_ratio),
-                "dup_frames": dup_frames,
-                "dup_ratio": dup_ratio,
-                "fire_count": fire_count,
-                "ads_count": ads_count,
-                "mark_count": mark_count,
-                "output": str(self.output_path),
-                "noise_floor_x": self.noise_floor_x,
-                "noise_floor_y": self.noise_floor_y,
-            }
-            self.on_done(True, summary)
+    def _handle_done(self, summary):
+        self.on_done(True, _recording_summary_to_dict(summary))
 
 
 class App(tk.Tk):
@@ -1971,12 +1909,7 @@ class App(tk.Tk):
 
     def _calibrate_then_record(self, output_path, metadata,
                                 fire_btn, ads_btn, mark_btn, ctrl):
-        """[T0.3] 录制前 3 秒静止校准，记录传感器本底噪声 + 回中虚位。
-
-        校准期间打开一个 modal 弹窗显示倒计时，后台线程以 ~250Hz 收集
-        松手状态下的 (rx, ry, lx, ly)，倒计时结束后算出每轴的 std 作为本底，
-        关闭弹窗，启动真正的 StickRecorder。
-        """
+        """[T0.3] 录制前 3 秒静止校准，UI 只负责弹窗和线程。"""
         # 录制按钮立刻禁用，防止用户重复点击
         self.start_btn["state"] = "disabled"
 
@@ -2012,23 +1945,25 @@ class App(tk.Tk):
             dlg, text="正在采集…", foreground="#888", font=("", 9))
         live_lbl.pack()
 
-        # 后台线程收集摇杆数据
-        samples = []         # list[(rx, ry, lx, ly)]
-        stop_evt = threading.Event()
+        # 后台线程只调用应用用例；采样节奏和本底计算由 CalibrateController 负责。
+        counting_reader = _CountingControllerReader(self.controller_mgr)
+        result_holder = []
         err_holder = []
+        worker_done = threading.Event()
 
         def collect_worker():
             try:
-                while not stop_evt.is_set():
-                    try:
-                        st = self.controller_mgr.read_state(ctrl)
-                        samples.append((st.rx, st.ry, st.lx, st.ly))
-                    except Exception as e:
-                        err_holder.append(str(e))
-                        break
-                    time.sleep(0.004)  # ~250 Hz 采集
+                result = CalibrateController(
+                    counting_reader, _SystemClock()).execute(
+                        CalibrationRequest(
+                            controller_info=ctrl,
+                            duration_s=3.0,
+                            sample_interval_s=0.004))
+                result_holder.append(result)
             except Exception as e:
                 err_holder.append(str(e))
+            finally:
+                worker_done.set()
 
         threading.Thread(
             target=collect_worker, daemon=True,
@@ -2039,25 +1974,22 @@ class App(tk.Tk):
             if remaining > 0:
                 countdown_lbl.configure(text=str(remaining), fg="#3498DB")
                 # 实时显示当前采集到的样本数让用户安心
-                live_lbl.configure(text=f"已采集 {len(samples)} 个样本…")
+                live_lbl.configure(
+                    text=f"已采集 {counting_reader.sample_count} 个样本…")
                 self.after(1000, tick, remaining - 1)
             else:
                 countdown_lbl.configure(text="完成", fg="#27AE60")
-                live_lbl.configure(text=f"共采集 {len(samples)} 个样本")
-                stop_evt.set()
+                live_lbl.configure(text="正在完成校准…")
                 # 留 200ms 让收集线程退出，再做 finalize
                 self.after(250, finalize)
 
         def finalize():
-            # 计算每轴 std（纯 Python 实现，不依赖 numpy）
-            def _std(arr):
-                n = len(arr)
-                if n < 2:
-                    return 0.0
-                mean = sum(arr) / n
-                return (sum((x - mean) ** 2 for x in arr) / n) ** 0.5
+            if not worker_done.is_set():
+                live_lbl.configure(
+                    text=f"正在完成校准… 已采集 {counting_reader.sample_count} 个样本")
+                self.after(50, finalize)
+                return
 
-            nfx = nfy = 0.0
             if err_holder:
                 # 校准期间读手柄出错
                 dlg.destroy()
@@ -2067,11 +1999,18 @@ class App(tk.Tk):
                     f"校准期间无法读取手柄状态：\n{err_holder[0]}\n\n"
                     "请重新点'开始录制'再试。")
                 return
-            if len(samples) >= 20:
-                rxs = [s[0] for s in samples]
-                rys = [s[1] for s in samples]
-                nfx = _std(rxs)
-                nfy = _std(rys)
+            if not result_holder:
+                dlg.destroy()
+                self.start_btn["state"] = "normal"
+                messagebox.showerror(
+                    "校准失败",
+                    "校准没有返回结果，请重新点'开始录制'再试。")
+                return
+
+            result = result_holder[0]
+            nfx = result.noise_floor_x
+            nfy = result.noise_floor_y
+            sample_count = result.sample_count
 
             metadata["noise_floor_x"] = f"{nfx:.6f}"
             metadata["noise_floor_y"] = f"{nfy:.6f}"
@@ -2080,7 +2019,7 @@ class App(tk.Tk):
             # 把校准结果记到 status_text，让用户看到
             self.status_text.delete(1.0, "end")
             self._log(f"✓ 校准完成：本底 X={nfx:.5f}  Y={nfy:.5f}  "
-                      f"（采样 {len(samples)} 帧）")
+                      f"（采样 {sample_count} 帧）")
             if max(nfx, nfy) > 0.01:
                 self._log(
                     f"  [提示] 本底偏高，可能是回中虚位较大或摇杆有漂移迹象，"

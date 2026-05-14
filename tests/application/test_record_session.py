@@ -174,3 +174,27 @@ def test_stop_from_progress_returns_summary_and_done_callback(tmp_path):
     assert summary.dup_frames == 51
     assert done_events == [summary]
     assert writer.closed is True
+
+
+def test_stop_before_execute_returns_empty_summary_and_allows_reuse(tmp_path):
+    writer = FakeWriter()
+    controller = FiniteController([FakeState(rx=0.2)])
+    session = RecordSession(controller, FakeClock(), writer)
+
+    session.stop()
+    stopped_summary = session.execute(_request(tmp_path))
+
+    assert stopped_summary.samples == 0
+    assert stopped_summary.rate == 0.0
+    assert stopped_summary.output == tmp_path / "record.csv"
+    assert controller.read_count == 0
+    assert writer.samples == []
+    assert writer.closed is True
+
+    reused_summary = session.execute(
+        _request(tmp_path, output_path=tmp_path / "second.csv")
+    )
+
+    assert reused_summary.samples == 1
+    assert reused_summary.output == tmp_path / "second.csv"
+    assert controller.read_count == 1
