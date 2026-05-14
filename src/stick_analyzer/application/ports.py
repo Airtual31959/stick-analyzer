@@ -3,10 +3,18 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Callable, Mapping, Protocol, Sequence
 
-from .dto import AnalysisProgress
+from .dto import (
+    AnalysisProgress,
+    RecordedSample,
+    RecordingFileMetadata,
+    RecordingProgress,
+    RecordingSummary,
+)
 
 
 ProgressCallback = Callable[[AnalysisProgress], None]
+RecordingProgressCallback = Callable[[RecordingProgress], None]
+RecordingDoneCallback = Callable[[RecordingSummary], None]
 
 
 class AnalyzerFunctions(Protocol):
@@ -72,3 +80,51 @@ class ReportWriter(Protocol):
     def write_text(self, path: Path, content: str) -> None:
         ...
 
+
+class ControllerInfoLike(Protocol):
+    name: str
+    protocol: str
+    layout: str
+    guid: str
+
+
+class ControllerStateLike(Protocol):
+    lx: float
+    ly: float
+    rx: float
+    ry: float
+    lt: float
+    rt: float
+    buttons: Mapping[str, bool]
+
+
+class ControllerReader(Protocol):
+    def read_state(self, controller_info: Any) -> ControllerStateLike:
+        ...
+
+
+ControllerPort = ControllerReader
+
+
+class ClockPort(Protocol):
+    def time_ns(self) -> int:
+        ...
+
+    def sleep(self, duration_s: float) -> None:
+        ...
+
+
+class RecordingWriter(Protocol):
+    def open(
+        self,
+        path: Path,
+        metadata: RecordingFileMetadata,
+        logical_buttons: Sequence[str],
+    ) -> None:
+        ...
+
+    def write_sample(self, sample: RecordedSample) -> None:
+        ...
+
+    def close(self) -> None:
+        ...
