@@ -58,6 +58,32 @@ try:
         MissingFireColumnError,
         NoFireBurstsError,
     )
+    from stick_analyzer.domain.constants import (
+        CLASSIFICATION_EXPLANATIONS as DOMAIN_CLASSIFICATION_EXPLANATIONS,
+        DEFAULT_MIN_DURATION_S as DOMAIN_DEFAULT_MIN_DURATION_S,
+        DURING_FIRE_STABILITY_MS as DOMAIN_DURING_FIRE_STABILITY_MS,
+        FIRE_GAP_THRESHOLD_S as DOMAIN_FIRE_GAP_THRESHOLD_S,
+        PRE_FIRE_STABILITY_MS as DOMAIN_PRE_FIRE_STABILITY_MS,
+        WEAPON_RPM as DOMAIN_WEAPON_RPM,
+        WINDOW_AFTER_S as DOMAIN_WINDOW_AFTER_S,
+        WINDOW_BEFORE_S as DOMAIN_WINDOW_BEFORE_S,
+    )
+    from stick_analyzer.domain.services.burst_analyzer import (
+        analyze_burst as domain_analyze_burst,
+    )
+    from stick_analyzer.domain.services.burst_classifier import (
+        classify_burst as domain_classify_burst,
+    )
+    from stick_analyzer.domain.services.fire_burst_detector import (
+        detect_fire_bursts as domain_detect_fire_bursts,
+    )
+    from stick_analyzer.domain.services.threshold_policy import (
+        get_stability_thresholds as domain_get_stability_thresholds,
+    )
+    from stick_analyzer.domain.services.weapon_policy import (
+        detect_weapon_rpm as domain_detect_weapon_rpm,
+        rpm_to_during_window_ms as domain_rpm_to_during_window_ms,
+    )
 except ModuleNotFoundError:
     from src.stick_analyzer.application import (
         AnalysisResult,
@@ -67,6 +93,32 @@ except ModuleNotFoundError:
     from src.stick_analyzer.application.use_cases import (
         MissingFireColumnError,
         NoFireBurstsError,
+    )
+    from src.stick_analyzer.domain.constants import (
+        CLASSIFICATION_EXPLANATIONS as DOMAIN_CLASSIFICATION_EXPLANATIONS,
+        DEFAULT_MIN_DURATION_S as DOMAIN_DEFAULT_MIN_DURATION_S,
+        DURING_FIRE_STABILITY_MS as DOMAIN_DURING_FIRE_STABILITY_MS,
+        FIRE_GAP_THRESHOLD_S as DOMAIN_FIRE_GAP_THRESHOLD_S,
+        PRE_FIRE_STABILITY_MS as DOMAIN_PRE_FIRE_STABILITY_MS,
+        WEAPON_RPM as DOMAIN_WEAPON_RPM,
+        WINDOW_AFTER_S as DOMAIN_WINDOW_AFTER_S,
+        WINDOW_BEFORE_S as DOMAIN_WINDOW_BEFORE_S,
+    )
+    from src.stick_analyzer.domain.services.burst_analyzer import (
+        analyze_burst as domain_analyze_burst,
+    )
+    from src.stick_analyzer.domain.services.burst_classifier import (
+        classify_burst as domain_classify_burst,
+    )
+    from src.stick_analyzer.domain.services.fire_burst_detector import (
+        detect_fire_bursts as domain_detect_fire_bursts,
+    )
+    from src.stick_analyzer.domain.services.threshold_policy import (
+        get_stability_thresholds as domain_get_stability_thresholds,
+    )
+    from src.stick_analyzer.domain.services.weapon_policy import (
+        detect_weapon_rpm as domain_detect_weapon_rpm,
+        rpm_to_during_window_ms as domain_rpm_to_during_window_ms,
     )
 
 # 中文字体 - 自动检测系统可用中文字体
@@ -101,54 +153,23 @@ _setup_chinese_font()
 
 
 # ==================== 配置 ====================
-WINDOW_BEFORE_S = 2.0       # 事件前观察窗口
-WINDOW_AFTER_S = 1.5        # 事件后观察窗口（包含整个开火过程）
-FIRE_GAP_THRESHOLD_S = 0.4  # 开火间隔超过此值视为不同爆发
-DEFAULT_MIN_DURATION_S = 0.05
-PRE_FIRE_STABILITY_MS = 100  # 开火前稳定度评估窗口
-DURING_FIRE_STABILITY_MS = 300  # 开火中稳定度评估窗口（默认）
+WINDOW_BEFORE_S = DOMAIN_WINDOW_BEFORE_S
+WINDOW_AFTER_S = DOMAIN_WINDOW_AFTER_S
+FIRE_GAP_THRESHOLD_S = DOMAIN_FIRE_GAP_THRESHOLD_S
+DEFAULT_MIN_DURATION_S = DOMAIN_DEFAULT_MIN_DURATION_S
+PRE_FIRE_STABILITY_MS = DOMAIN_PRE_FIRE_STABILITY_MS
+DURING_FIRE_STABILITY_MS = DOMAIN_DURING_FIRE_STABILITY_MS
 # ===============================================
 
 
 # ==================== [T2.3] 武器射速感知 ====================
-# 常见 FPS 武器的 RPM（rounds per minute）/ 每秒射速。
-# 关键词匹配——只要用户填的武器名包含其中一个，就拿对应的 RPM。
-# 数值是各游戏社区里相对成熟的近似值，主要用于分类（高/中/低射速）。
-WEAPON_RPM = {
-    # 高射速冲锋枪
-    "r99": 1080, "r-99": 1080, "volt": 720, "alternator": 600,
-    "car": 930, "p2020": 420,
-    # 步枪 / 突击步枪
-    "r301": 810, "r-301": 810, "flatline": 600, "havoc": 672,
-    "hemlock": 930, "30-30": 192, "nemesis": 720,
-    # 轻机枪
-    "spitfire": 540, "rampage": 312, "devotion": 900, "lstar": 600,
-    # 霰弹
-    "eva": 138, "mastiff": 156, "peacekeeper": 102, "mozambique": 234,
-    # 半自动 / DMR
-    "g7": 240, "scout": 240, "wingman": 156, "bocek": 162,
-    # 拉栓 / 单发
-    "kraber": 30, "sentinel": 30, "longbow": 78, "triple": 96,
-    # 通用类别词（兜底）
-    "smg": 800, "冲锋枪": 800,
-    "rifle": 600, "步枪": 600, "突击步枪": 600,
-    "lmg": 600, "轻机枪": 600,
-    "shotgun": 150, "霰弹": 150, "霰弹枪": 150,
-    "dmr": 240, "marksman": 240,
-    "sniper": 30, "狙击": 30, "狙击枪": 30, "拉栓": 30,
-}
+WEAPON_RPM = DOMAIN_WEAPON_RPM
+CLASSIFICATION_EXPLANATIONS = DOMAIN_CLASSIFICATION_EXPLANATIONS
 
 
 def detect_weapon_rpm(weapons_str: str) -> int:
     """从用户填的武器字段里推断 RPM。识别不到返回 0（按默认处理）。"""
-    if not weapons_str:
-        return 0
-    s = weapons_str.lower()
-    # 优先匹配长关键词（r-301 比 r3 更精确）
-    for name in sorted(WEAPON_RPM.keys(), key=len, reverse=True):
-        if name in s:
-            return WEAPON_RPM[name]
-    return 0
+    return domain_detect_weapon_rpm(weapons_str)
 
 
 def rpm_to_during_window_ms(rpm: int) -> int:
@@ -158,13 +179,7 @@ def rpm_to_during_window_ms(rpm: int) -> int:
     - 中等射速：300ms（默认）
     - 低射速（<150 RPM，霰弹/狙击/单发）：返回 0 表示跳过分析
     """
-    if rpm <= 0:
-        return DURING_FIRE_STABILITY_MS  # 不识别 → 默认
-    if rpm > 900:
-        return 200
-    if rpm < 150:
-        return 0  # 单发/拉栓武器没有"压枪过程"
-    return DURING_FIRE_STABILITY_MS
+    return domain_rpm_to_during_window_ms(rpm)
 
 
 def load_csv(path: Path) -> tuple:
@@ -242,121 +257,13 @@ def get_stability_thresholds(metadata: dict) -> dict:
 
     优先用 rc_ads_intensity 字段（动感强度等级），向后兼容老格式 rc_ads（数值）。
     """
-    # 默认（中性 / 无 RC）
-    thresholds = {
-        "pre_stable": 0.04,
-        "pre_unstable": 0.10,
-        "during_stable": 0.04,
-        "during_unstable": 0.08,
-        "rev_good": 10,
-        "rev_bad": 25,
-        "intensity_label": "无 RC / 中性",
-        "sensor_label": "碳膜 / 默认",
-        "sensor_factor": 1.00,
-    }
-
-    # 强度等级 → 阈值放宽倍数（基于实测数据校准）
-    intensity_factors = {
-        "none": 1.00,        # 无 RC，标准阈值
-        "antishake": 0.90,   # 防抖方向，可能稍微更稳
-        "light": 1.10,       # 轻度动感
-        "medium": 1.25,      # 中度动感
-        "strong": 1.45,      # 强动感
-        "extreme": 1.70,     # 拉满
-    }
-    intensity_labels = {
-        "none": "无 RC 功能",
-        "antishake": "防抖方向",
-        "light": "轻度增抖",
-        "medium": "中度增抖",
-        "strong": "强增抖",
-        "extreme": "极限增抖",
-    }
-
-    # 优先用新格式
-    intensity = metadata.get("rc_ads_intensity", "").strip().lower()
-
-    factor = None
-    if intensity and intensity in intensity_factors:
-        factor = intensity_factors[intensity]
-        thresholds["intensity_label"] = intensity_labels[intensity]
-    else:
-        # 向后兼容：老格式 rc_ads 是数值
-        # 但只对 ±10 范围的小数值生效，避免 -500 这种值算出离谱的放宽倍数
-        try:
-            rc_ads = float(metadata.get("rc_ads", "0"))
-            if -15 <= rc_ads < 0:
-                # 老格式且在合理范围内才用数值法
-                factor = 1.0 + abs(rc_ads) * 0.05
-                thresholds["intensity_label"] = f"老格式 RC={rc_ads}"
-            elif rc_ads < -15:
-                # 数值过大说明手柄 RC 范围不是 ±10，按"中度增抖"兜底
-                factor = intensity_factors["medium"]
-                thresholds["intensity_label"] = (
-                    f"老格式 RC={rc_ads}（数值范围未知，按中度增抖处理）")
-        except (ValueError, TypeError):
-            pass
-
-    if factor is not None and factor != 1.0:
-        thresholds["pre_stable"] *= factor
-        thresholds["pre_unstable"] *= factor
-        thresholds["during_stable"] *= factor
-        thresholds["during_unstable"] *= factor
-
-    # [T1.3] 传感器类型放宽因子，叠在 RC 因子之上
-    sensor_factors = {
-        "alps": 1.00,     # 碳膜（传统）
-        "tmr": 1.00,      # TMR（已接近碳膜，主流 FPS 默认）
-        "hall": 1.25,     # 霍尔（中心钝，非 FPS 主流）
-        "unknown": 1.00,  # 默认按 TMR / 碳膜（当前主流）
-    }
-    sensor_labels = {
-        "alps": "碳膜 ALPS",
-        "tmr": "TMR（隧道磁阻）",
-        "hall": "霍尔",
-        "unknown": "未知 / 默认（按主流处理）",
-    }
-    sensor = metadata.get("sensor_type", "unknown").strip().lower()
-    sensor_factor = sensor_factors.get(sensor, 1.00)
-    thresholds["sensor_label"] = sensor_labels.get(sensor, "未知")
-    thresholds["sensor_factor"] = sensor_factor
-
-    if sensor_factor != 1.0:
-        thresholds["pre_stable"] *= sensor_factor
-        thresholds["pre_unstable"] *= sensor_factor
-        thresholds["during_stable"] *= sensor_factor
-        thresholds["during_unstable"] *= sensor_factor
-
-    return thresholds
+    return domain_get_stability_thresholds(metadata)
 
 
 def detect_fire_bursts(df: pd.DataFrame,
                        min_duration_s: float = DEFAULT_MIN_DURATION_S) -> list:
     """检测开火爆发段，返回 [(start_s, end_s), ...]"""
-    fire_mask = df["fire"].astype(bool).values
-    times = df["elapsed_s"].values
-
-    bursts = []
-    in_burst = False
-    burst_start = 0.0
-    last_fire_t = 0.0
-
-    for t, f in zip(times, fire_mask):
-        if f:
-            if not in_burst:
-                burst_start = t
-                in_burst = True
-            last_fire_t = t
-        else:
-            if in_burst and (t - last_fire_t) > FIRE_GAP_THRESHOLD_S:
-                if last_fire_t - burst_start >= min_duration_s:
-                    bursts.append((burst_start, last_fire_t))
-                in_burst = False
-
-    if in_burst and last_fire_t - burst_start >= min_duration_s:
-        bursts.append((burst_start, last_fire_t))
-
-    return bursts
+    return domain_detect_fire_bursts(df, min_duration_s)
 
 
 def analyze_burst(df: pd.DataFrame, burst_start: float, burst_end: float,
@@ -374,213 +281,21 @@ def analyze_burst(df: pd.DataFrame, burst_start: float, burst_end: float,
         - 150-900 RPM（中等射速）：300ms 窗口（默认）
         - <150 RPM（霰弹/狙击/单发）：跳过 during 分析（NaN）
     """
-    t_win_start = burst_start - WINDOW_BEFORE_S
-    t_win_end = burst_end + WINDOW_AFTER_S
-    win = df[(df["elapsed_s"] >= t_win_start)
-             & (df["elapsed_s"] <= t_win_end)].copy()
-
-    if len(win) < 10:
-        return None
-
-    # 相对时间：以开火起始为 0
-    win["rel_t"] = win["elapsed_s"] - burst_start
-    burst_duration = burst_end - burst_start
-
-    def _denoise(std_x: float, std_y: float) -> float:
-        """合成 X/Y 标准差，并减去本底（平方差再开方，因为方差可加）。
-
-        clamp 到 0 以防本底估高了导致负数。
-        """
-        var_x = max(0.0, std_x ** 2 - noise_floor_x ** 2)
-        var_y = max(0.0, std_y ** 2 - noise_floor_y ** 2)
-        return float(np.sqrt(var_x + var_y))
-
-    # ===== 指标 1：开火前 100ms 稳定度 =====
-    pre_window = win[(win["rel_t"] >= -PRE_FIRE_STABILITY_MS / 1000.0)
-                     & (win["rel_t"] <= 0)]
-    if len(pre_window) > 5:
-        pre_rx_std = pre_window["rx"].std()
-        pre_ry_std = pre_window["ry"].std()
-        pre_stability = _denoise(pre_rx_std, pre_ry_std)
-    else:
-        pre_stability = float("nan")
-
-    # ===== 指标 2：开火中稳定度 =====
-    # [T2.3] 根据武器射速动态调整窗口
-    during_window_ms = rpm_to_during_window_ms(weapon_rpm)
-    if during_window_ms <= 0:
-        # 单发 / 拉栓武器：没有"压枪过程"概念，跳过分析
-        during_stability = float("nan")
-    else:
-        fire_during = win[(win["rel_t"] >= 0)
-                          & (win["rel_t"] <= during_window_ms / 1000.0)]
-        if len(fire_during) > 5:
-            # 减去趋势（拟合线性后取残差），因为压枪本身有持续位移
-            rx_arr = fire_during["rx"].values
-            ry_arr = fire_during["ry"].values
-            x_idx = np.arange(len(rx_arr))
-            if len(x_idx) > 2:
-                rx_trend = np.polyfit(x_idx, rx_arr, 1)
-                ry_trend = np.polyfit(x_idx, ry_arr, 1)
-                rx_residual = rx_arr - np.polyval(rx_trend, x_idx)
-                ry_residual = ry_arr - np.polyval(ry_trend, x_idx)
-                during_stability = _denoise(rx_residual.std(),
-                                             ry_residual.std())
-            else:
-                during_stability = _denoise(rx_arr.std(), ry_arr.std())
-        else:
-            during_stability = float("nan")
-
-    # ===== 指标 3：推杆量分布 =====
-    rx = win["rx"].values
-    ry = win["ry"].values
-    magnitude = np.sqrt(rx ** 2 + ry ** 2)
-    avg_magnitude = float(np.mean(magnitude))
-    max_magnitude = float(np.max(magnitude))
-
-    # ===== 指标 4：开火爆发期间的方向反转 =====
-    # 算法：先用 50ms 滑动均值平滑掉高频噪声，
-    # 再统计速度（diff）符号变化，最后只保留振幅 > 0.05 的反转
-    # [T3.3] 同时按反转幅度细分:
-    #   - 大幅过冲（>0.15）: 单次甩过头，通常是高段曲线灵敏度过高
-    #   - 小抖动（0.05-0.15）: 高频微小修正，通常是低段过激或硬件本底
-    burst_data = win[(win["rel_t"] >= 0) & (win["rel_t"] <= burst_duration)]
-    if len(burst_data) > 50:
-        smooth_win = max(5, min(50, len(burst_data) // 5))
-
-        def count_meaningful_reversals(arr):
-            """返回 (total, large_overshoots, small_jitters, max_amplitude)"""
-            kernel = np.ones(smooth_win) / smooth_win
-            smoothed = np.convolve(arr, kernel, mode="valid")
-            if len(smoothed) < 4:
-                return 0, 0, 0, 0.0
-            v = np.diff(smoothed)
-            sign_change_idx = np.where(np.diff(np.sign(v)) != 0)[0]
-            total = 0
-            large = 0
-            small = 0
-            max_amp = 0.0
-            last_extreme_val = smoothed[0]
-            for idx in sign_change_idx:
-                cur_extreme = smoothed[idx + 1]
-                amp = abs(cur_extreme - last_extreme_val)
-                if amp > 0.05:
-                    total += 1
-                    if amp > 0.15:
-                        large += 1
-                    else:
-                        small += 1
-                    if amp > max_amp:
-                        max_amp = amp
-                    last_extreme_val = cur_extreme
-            return total, large, small, max_amp
-
-        rx_t, rx_l, rx_s, rx_m = count_meaningful_reversals(
-            burst_data["rx"].values)
-        ry_t, ry_l, ry_s, ry_m = count_meaningful_reversals(
-            burst_data["ry"].values)
-        total_reversals = int(rx_t + ry_t)
-        large_overshoots = int(rx_l + ry_l)
-        small_jitters = int(rx_s + ry_s)
-        max_reversal_amplitude = float(max(rx_m, ry_m))
-    else:
-        total_reversals = 0
-        large_overshoots = 0
-        small_jitters = 0
-        max_reversal_amplitude = 0.0
-
-    # ===== 指标 5：主导推杆区间（开火中和开火前 0.5 秒） =====
-    relevant = win[(win["rel_t"] >= -0.5) & (win["rel_t"] <= burst_duration)]
-    rel_mag = np.sqrt(relevant["rx"] ** 2 + relevant["ry"] ** 2).values
-    nonzero = rel_mag[rel_mag > 0.05]
-    if len(nonzero) > 10:
-        dom_low = float(np.percentile(nonzero, 25)) * 100
-        dom_high = float(np.percentile(nonzero, 75)) * 100
-    else:
-        dom_low = dom_high = 0
-
-    # ===== 指标 6：是否在 ADS 状态下开火 =====
-    fire_pre = win[(win["rel_t"] >= -0.05) & (win["rel_t"] <= 0)]
-    is_ads = bool(fire_pre["ads"].astype(bool).any()) if len(fire_pre) > 0 else False
-
-    # ===== 指标 7：左摇杆动作幅度（走位识别） =====
-    lx_range = float(win["lx"].max() - win["lx"].min())
-    ly_range = float(win["ly"].max() - win["ly"].min())
-    is_moving = lx_range > 0.3 or ly_range > 0.3
-
-    return {
-        "burst_start": burst_start,
-        "burst_end": burst_end,
-        "duration": burst_duration,
-        "data": win,
-        "pre_stability": pre_stability,
-        "during_stability": during_stability,
-        "avg_magnitude": avg_magnitude,
-        "max_magnitude": max_magnitude,
-        "total_reversals": total_reversals,
-        # [T3.3] 反转细分
-        "large_overshoots": large_overshoots,        # 单次幅度 > 0.15
-        "small_jitters": small_jitters,              # 0.05 < 幅度 <= 0.15
-        "max_reversal_amplitude": max_reversal_amplitude,
-        "dominant_input_low": dom_low,
-        "dominant_input_high": dom_high,
-        "is_ads": is_ads,
-        "is_moving": is_moving,
-        "lx_range": lx_range,
-        "ly_range": ly_range,
-        # [T2.3] 武器射速感知信息
-        "weapon_rpm": weapon_rpm,
-        "during_window_ms": during_window_ms,
-    }
+    return domain_analyze_burst(
+        df,
+        burst_start,
+        burst_end,
+        noise_floor_x=noise_floor_x,
+        noise_floor_y=noise_floor_y,
+        weapon_rpm=weapon_rpm,
+    )
 
 
 def classify_burst(m: dict) -> str:
     """根据指标分类射击行为
     [T3.4] 档位从粗到细: 完美稳定 ⭐ > 稳定射击 ✓ > 接近稳定 > 中等稳定 > 严重问题 ⚠
     """
-    if m is None:
-        return "数据不足"
-    pre = m["pre_stability"]
-    dur = m["during_stability"]
-    rev = m["total_reversals"]
-    avg_mag = m.get("avg_magnitude", 0.0)
-
-    # 严重问题：任一指标爆表（最高优先级）
-    if not np.isnan(pre) and pre > 0.10:
-        return "开火前抖动 ⚠"
-    if not np.isnan(dur) and dur > 0.08:
-        return "开火中抖动 ⚠"
-    if rev > 25:
-        return "频繁过冲 ⚠"
-
-    # 微调跟枪：推杆量极小（跟"稳定"是不同维度）
-    if avg_mag < 0.10:
-        return "微调跟枪"
-
-    # 稳定档位（按 pre + rev 综合细分）
-    if not np.isnan(pre):
-        if pre < 0.025 and rev < 5:
-            return "完美稳定 ⭐"
-        if pre < 0.04 and rev < 10:
-            return "稳定射击 ✓"
-        if pre < 0.06 and rev < 15:
-            return "接近稳定"
-
-    return "中等稳定"
-
-
-# [T3.4] 分类对应的玩家直觉解释（按从好到差排列）
-CLASSIFICATION_EXPLANATIONS = {
-    "完美稳定 ⭐": "教科书级压枪，准星几乎纹丝不动",
-    "稳定射击 ✓": "理想状态，压枪稳、命中率高",
-    "接近稳定": "基本稳但有微调，实战可用",
-    "中等稳定": "能打中但不稳，需要练习",
-    "微调跟枪": "远距离精修目标，推杆量很小",
-    "开火前抖动 ⚠": "瞄准时手抖，准星没停在敌人身上（曲线低段问题/瞄太久/紧张）",
-    "开火中抖动 ⚠": "后坐力没压住，曲线匹配差（中段过陡）",
-    "频繁过冲 ⚠": "准星反复修正越过目标，斜率太高",
-    "数据不足": "burst 时长太短或采样不足",
-}
+    return domain_classify_burst(m)
 
 
 def plot_burst(m: dict, output_path: Path, title: str):
