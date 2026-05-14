@@ -135,6 +135,21 @@ python build_exe.py
 
 输出在 `dist/` 目录：onedir 模式生成 `dist/StickAnalyzer/StickAnalyzer.exe`，可按提示打包为 `dist/StickAnalyzer.zip`；onefile 模式生成 `dist/StickAnalyzer.exe`。
 
+### 开发验证
+
+修改代码后运行最小验证：
+
+```powershell
+.\scripts\verify.ps1
+```
+
+脚本会依次执行所有 Python 文件的语法编译检查和测试：
+
+```powershell
+python -m py_compile <所有 Python 文件>
+python -m pytest
+```
+
 ------
 
 ## 📊 你会看到什么数据
