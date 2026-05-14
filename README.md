@@ -54,7 +54,7 @@
 - 采样率说明：从「链路瓶颈」改为「pygame/SDL 协议上限」（实际就是 ~500-1000Hz，无论手柄多高回报率）
 - RC 措辞：移除"RC 强度过激"误导描述，改为"RC 让摇杆变钝、增加噪声"
 
-完整变更日志见 [CHANGELOG_v2.1.md](CHANGELOG_v2.1.md)。
+完整变更日志见 [CHANGELOG.md](CHANGELOG.md)。
 
 ------
 
@@ -129,12 +129,11 @@ python main_gui.py
 ### 方法 3：自己打包 EXE
 
 ```bash
-pip install pyinstaller
 python build_exe.py
-# 选 1（onedir 推荐）或 2（onefile）
+# 回车默认选 1（onedir 推荐），输入 2 生成 onefile
 ```
 
-输出在 `dist/` 目录。
+输出在 `dist/` 目录：onedir 模式生成 `dist/StickAnalyzer/StickAnalyzer.exe`，可按提示打包为 `dist/StickAnalyzer.zip`；onefile 模式生成 `dist/StickAnalyzer.exe`。
 
 ------
 
@@ -314,7 +313,7 @@ MIT License — 自由使用、修改、分发，请保留作者信息。
 - **作者主页（B站）**：https://space.bilibili.com/491671381
 - 抖音：josef_0464
 - **QQ 反馈交流群：611624374（星辰不妙屋）**
-- GitHub Issues：[Issues](https://claude.ai/issues)
+- GitHub Issues：[Issues](https://github.com/q6666666q/stick-analyzer/issues)
 
 ### 程序出错怎么办？
 

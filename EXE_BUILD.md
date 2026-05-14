@@ -10,16 +10,28 @@ python build_exe.py
 
 脚本会自动：
 1. 检查并安装 PyInstaller
-2. 把 `main_gui.py` + `analyzer.py` 打包成单个 `StickAnalyzer.exe`
-3. 输出到 `dist/StickAnalyzer.exe`
+2. 检查 `main_gui.py`，并把 `analyzer.py`、`controller_backend.py`、`error_reporter.py` 作为附加模块打包（如果文件存在）
+3. 让你选择打包模式：回车默认 onedir，输入 `2` 选择 onefile
+4. onedir 输出到 `dist/StickAnalyzer/StickAnalyzer.exe`，onefile 输出到 `dist/StickAnalyzer.exe`
+5. onedir 打包成功后，可按提示自动生成 `dist/StickAnalyzer.zip`
 
 打包过程大约 1-2 分钟，最终 EXE 大小约 80-150MB（包含了 matplotlib、pandas 等所有依赖）。
 
 ## 使用方法
 
-直接双击 `StickAnalyzer.exe` 即可运行，**完全不需要 Python 环境**。
+### onedir 模式（推荐）
 
-第一次启动可能需要 5-10 秒（解压依赖到临时目录）。
+进入 `dist/StickAnalyzer/` 文件夹，双击 `StickAnalyzer.exe` 即可运行，**完全不需要 Python 环境**。
+
+分发时请发送整个 `StickAnalyzer` 文件夹，或发送脚本生成的 `StickAnalyzer.zip`。不要只发送文件夹里的 `StickAnalyzer.exe`，它需要同目录下的 `_internal/` 目录。
+
+启动通常需要 3-8 秒。
+
+### onefile 模式
+
+直接双击 `dist/StickAnalyzer.exe` 即可运行，**完全不需要 Python 环境**。
+
+第一次启动通常需要 30-90 秒，因为 PyInstaller 需要把依赖解压到临时目录。任务管理器里可能短暂出现两个 `StickAnalyzer.exe` 进程，这是 onefile 模式的正常机制。
 
 ## GUI 使用流程
 
