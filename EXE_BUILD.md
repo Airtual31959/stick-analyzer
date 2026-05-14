@@ -38,7 +38,7 @@ python build_exe.py
 ### 标签 1：录制摇杆数据
 
 1. 填写元数据（RC 值、曲线版本、武器、场景等）—— 可选，但建议填
-2. 选择输出目录
+2. 输出目录默认使用 `~/.stickanalyzer/data`，可按需选择其他目录
 3. 点击 **● 开始录制**
 4. 正常打游戏（屏幕上有实时状态显示，按 RB 应看到 FIRE 标记，按方向上键应看到 ADS 标记）
 5. 打完后回到 GUI 点 **■ 停止录制**
@@ -54,21 +54,8 @@ python build_exe.py
 
 ## 改键位
 
-如果你的开火/开镜键和默认不同，需要修改源码：
-
-打开 `main_gui.py`，找到顶部：
-```python
-FIRE_BUTTON = "RIGHT_SHOULDER"
-ADS_BUTTON = "DPAD_UP"
-```
-
-改成你需要的，然后重新打包：
-```bash
-python build_exe.py
-```
-
-可选值：`A`、`B`、`X`、`Y`、`DPAD_UP/DOWN/LEFT/RIGHT`、
-`LEFT_SHOULDER`、`RIGHT_SHOULDER`、`TRIGGER_LEFT`、`TRIGGER_RIGHT` 等。
+如果你的开火/开镜/标记键和默认不同，直接在 GUI 的「键位映射设置」里选择。
+程序会自动保存到 `~/.stickanalyzer/config.json`，下次启动会恢复上次设置。
 
 ## 常见问题
 
@@ -81,8 +68,8 @@ python build_exe.py
 - 在 Windows 设置 → 设备 → 蓝牙和其他设备 里能看到手柄
 
 ### Q: 录制时按键没反应（FIRE/ADS 标记不亮）？
-- 默认键位是 RB + 方向上键
-- 如果你的键位不同，按"改键位"章节修改并重新打包
+- 默认键位是 RB 开火 + LT 开镜
+- 如果你的键位不同，直接在 GUI 的「键位映射设置」里选择
 
 ### Q: 生成的图中文显示方框？
 - 确保系统装了 Microsoft YaHei 字体（Windows 自带）

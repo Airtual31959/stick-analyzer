@@ -126,6 +126,11 @@ pip install -r requirements.txt
 python main_gui.py
 ```
 
+### 数据和配置保存位置
+
+- 录制 CSV、分析报告和图表默认保存到 `~/.stickanalyzer/data`
+- 键位映射、性能档和输出目录会保存到 `~/.stickanalyzer/config.json`
+
 ### 方法 3：自己打包 EXE
 
 ```bash

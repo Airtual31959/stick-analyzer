@@ -50,10 +50,32 @@ except ImportError:
 # ==================== 默认配置 ====================
 DEFAULT_FIRE_BUTTON = "RIGHT_SHOULDER"   # 逻辑代码（RB / R1 / R 等等）
 DEFAULT_ADS_BUTTON = "TRIGGER_LEFT"      # LT / L2，FPS 玩家最常用的开镜键
+DEFAULT_MARK_BUTTON = "BACK"             # 玩家手动标记键
 TARGET_RATE_HZ = 500   # pygame 实际能力 ~500Hz；XInput 也用同值确保 GUI 流畅
 
 APP_VERSION = "v2.1"
 # ===================================================
+
+
+def get_app_data_dir(home_dir=None) -> Path:
+    """返回应用私有数据目录，避免把录制文件混在程序目录。"""
+    home = Path.home() if home_dir is None else Path(home_dir)
+    return home / ".stickanalyzer"
+
+
+def get_config_path(home_dir=None) -> Path:
+    return get_app_data_dir(home_dir) / "config.json"
+
+
+def get_default_output_dir(home_dir=None) -> Path:
+    return get_app_data_dir(home_dir) / "data"
+
+
+def resolve_output_dir(cfg: dict, home_dir=None) -> Path:
+    raw = str(cfg.get("out_dir") or "").strip()
+    if raw:
+        return Path(raw).expanduser()
+    return get_default_output_dir(home_dir)
 
 
 def _import_analyzer():
@@ -482,6 +504,8 @@ class App(tk.Tk):
         self.recorder = None
         self.csv_path_var = tk.StringVar()
         self.last_report_content = ""
+        self.config = self._load_config()
+        self._config_ready = False
 
         # 安装全局异常钩子（捕获所有未处理异常，弹出反馈窗口）
         if error_reporter is not None:
@@ -503,6 +527,8 @@ class App(tk.Tk):
         self.slot_radio_buttons = []  # GUI Radiobutton 引用，用于动态更新
 
         self._build_ui()
+        self._config_ready = True
+        self._persist_user_config()
 
         # UI 搭好后立即让窗口可见，再异步启动重型初始化
         # update_idletasks 会把所有挂起的几何计算执行掉，update 会让窗口实际显示
@@ -607,7 +633,7 @@ class App(tk.Tk):
     # ========== [T0.1] 欢迎面板 ==========
     def _config_path(self) -> Path:
         """用户配置文件路径：~/.stickanalyzer/config.json"""
-        return Path.home() / ".stickanalyzer" / "config.json"
+        return get_config_path()
 
     def _load_config(self) -> dict:
         path = self._config_path()
@@ -627,8 +653,27 @@ class App(tk.Tk):
             import json
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(cfg, f, ensure_ascii=False, indent=2)
+            self.config = dict(cfg)
         except Exception as e:
             print(f"[警告] 保存配置失败: {e}")
+
+    def _persist_user_config(self):
+        """持久化会影响下次启动体验的用户设置。"""
+        if not getattr(self, "_config_ready", False):
+            return
+
+        cfg = dict(getattr(self, "config", {}) or {})
+        if hasattr(self, "fire_button_var"):
+            cfg["fire_button"] = self.fire_button_var.get()
+        if hasattr(self, "ads_button_var"):
+            cfg["ads_button"] = self.ads_button_var.get()
+        if hasattr(self, "mark_button_var"):
+            cfg["mark_button"] = self.mark_button_var.get()
+        if hasattr(self, "perf_profile_var"):
+            cfg["perf_profile"] = self.perf_profile_var.get()
+        if hasattr(self, "out_dir_var"):
+            cfg["out_dir"] = self.out_dir_var.get()
+        self._save_config(cfg)
 
     def _show_welcome_if_needed(self):
         """首次启动显示欢迎面板，介绍工具用途和 3 步工作流。"""
@@ -883,7 +928,8 @@ class App(tk.Tk):
 
         ttk.Label(key_frame, text="开火键 (FIRE):", width=14).grid(
             row=0, column=0, sticky="e", padx=5, pady=5)
-        self.fire_button_var = tk.StringVar(value=DEFAULT_FIRE_BUTTON)
+        self.fire_button_var = tk.StringVar(
+            value=self.config.get("fire_button", DEFAULT_FIRE_BUTTON))
         fire_combo = ttk.Combobox(key_frame, state="readonly", width=30)
         fire_combo.grid(row=0, column=1, sticky="w", padx=5, pady=5)
         fire_combo.bind("<<ComboboxSelected>>",
@@ -892,7 +938,8 @@ class App(tk.Tk):
 
         ttk.Label(key_frame, text="开镜键 (ADS):", width=14).grid(
             row=1, column=0, sticky="e", padx=5, pady=5)
-        self.ads_button_var = tk.StringVar(value=DEFAULT_ADS_BUTTON)
+        self.ads_button_var = tk.StringVar(
+            value=self.config.get("ads_button", DEFAULT_ADS_BUTTON))
         ads_combo = ttk.Combobox(key_frame, state="readonly", width=30)
         ads_combo.grid(row=1, column=1, sticky="w", padx=5, pady=5)
         ads_combo.bind("<<ComboboxSelected>>",
@@ -902,7 +949,8 @@ class App(tk.Tk):
         # [T2.1] 标记键 - 玩家按一下标记"这次压得好"
         ttk.Label(key_frame, text="标记键 (MARK):", width=14).grid(
             row=2, column=0, sticky="e", padx=5, pady=5)
-        self.mark_button_var = tk.StringVar(value="BACK")  # 默认 BACK 键
+        self.mark_button_var = tk.StringVar(
+            value=self.config.get("mark_button", DEFAULT_MARK_BUTTON))
         mark_combo = ttk.Combobox(key_frame, state="readonly", width=30)
         mark_combo.grid(row=2, column=1, sticky="w", padx=5, pady=5)
         mark_combo.bind("<<ComboboxSelected>>",
@@ -938,7 +986,8 @@ class App(tk.Tk):
 
         ttk.Label(perf_frame, text="采样精度:", width=14).grid(
             row=0, column=0, sticky="e", padx=5, pady=2)
-        self.perf_profile_var = tk.StringVar(value="high")
+        self.perf_profile_var = tk.StringVar(
+            value=self.config.get("perf_profile", "high"))
         perf_options = [
             ("⚡ 高精度（默认，500Hz）- 推荐配置较好的电脑", "high"),
             ("🔋 平衡（250Hz）- 大多数电脑", "normal"),
@@ -948,7 +997,12 @@ class App(tk.Tk):
         perf_combo = ttk.Combobox(perf_frame,
                                    values=[o[0] for o in perf_options],
                                    state="readonly", width=50)
-        perf_combo.current(0)
+        perf_codes = [o[1] for o in perf_options]
+        current_perf = self.perf_profile_var.get()
+        if current_perf not in perf_codes:
+            current_perf = "high"
+            self.perf_profile_var.set(current_perf)
+        perf_combo.current(perf_codes.index(current_perf))
         perf_combo.grid(row=0, column=1, sticky="w", padx=5, pady=2)
         perf_combo.bind("<<ComboboxSelected>>",
                         lambda e: self._on_perf_change(perf_combo))
@@ -1120,7 +1174,12 @@ class App(tk.Tk):
         out_frame = ttk.Frame(parent)
         out_frame.pack(fill="x", padx=10, pady=5)
         ttk.Label(out_frame, text="输出目录:").pack(side="left")
-        self.out_dir_var = tk.StringVar(value=str(Path.cwd()))
+        output_dir = resolve_output_dir(self.config)
+        try:
+            output_dir.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            print(f"[警告] 创建默认输出目录失败: {e}")
+        self.out_dir_var = tk.StringVar(value=str(output_dir))
         ttk.Entry(out_frame, textvariable=self.out_dir_var, width=50).pack(
             side="left", padx=5)
         ttk.Button(out_frame, text="选择...",
@@ -1162,6 +1221,7 @@ class App(tk.Tk):
                 self.ads_button_var.set(logical_code)
             elif btn_type == "mark":
                 self.mark_button_var.set(logical_code)
+            self._persist_user_config()
 
     # ========== [Bug 修复] 键位映射实时测试 ==========
     def _open_button_test_dialog(self):
@@ -1362,6 +1422,7 @@ class App(tk.Tk):
         if 0 <= idx < len(self._perf_options):
             label, code = self._perf_options[idx]
             self.perf_profile_var.set(code)
+            self._persist_user_config()
 
     # ========== 控制器槽位管理 ==========
     def _scan_controllers(self):
@@ -1493,9 +1554,9 @@ class App(tk.Tk):
             self.mark_combo["values"] = display_labels
             if old_mark in logical_codes:
                 self.mark_combo.current(logical_codes.index(old_mark))
-            elif "BACK" in logical_codes:
-                self.mark_combo.current(logical_codes.index("BACK"))
-                self.mark_button_var.set("BACK")
+            elif DEFAULT_MARK_BUTTON in logical_codes:
+                self.mark_combo.current(logical_codes.index(DEFAULT_MARK_BUTTON))
+                self.mark_button_var.set(DEFAULT_MARK_BUTTON)
             elif logical_codes:
                 self.mark_combo.current(0)
                 self.mark_button_var.set(logical_codes[0])
@@ -1512,6 +1573,7 @@ class App(tk.Tk):
         self.key_hint_label.configure(
             text=f"当前布局: {layout_name}。按键标签会根据控制器协议自动适配。"
                  "选错键位会导致 FIRE/ADS 标记不亮。")
+        self._persist_user_config()
 
     # ========== 标签 2：分析 ==========
     def _build_analyze_tab(self, parent):
@@ -1828,6 +1890,7 @@ class App(tk.Tk):
         d = filedialog.askdirectory(initialdir=self.out_dir_var.get())
         if d:
             self.out_dir_var.set(d)
+            self._persist_user_config()
 
     def _choose_csv(self):
         f = filedialog.askopenfilename(
