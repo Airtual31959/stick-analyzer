@@ -23,6 +23,7 @@ import shutil
 from pathlib import Path
 
 PROJECT_DIR = Path(__file__).parent.resolve()
+SRC_DIR = PROJECT_DIR / "src"
 
 # 需要打包的模块（除了 main_gui.py 作为入口）
 SUB_MODULES = [
@@ -33,6 +34,18 @@ SUB_MODULES = [
 
 # 关键的隐式导入（PyInstaller 静态分析可能漏掉的）
 HIDDEN_IMPORTS = [
+    # src/ 包结构
+    "stick_analyzer",
+    "stick_analyzer.application",
+    "stick_analyzer.application.use_cases",
+    "stick_analyzer.domain",
+    "stick_analyzer.domain.services",
+    "stick_analyzer.adapters",
+    "stick_analyzer.adapters.controller",
+    "stick_analyzer.adapters.reporting",
+    "stick_analyzer.adapters.storage",
+    "stick_analyzer.adapters.prompt",
+    "stick_analyzer.adapters.ui",
     # matplotlib 后端
     "matplotlib.backends.backend_agg",
     "matplotlib.backends.backend_tkagg",
@@ -114,6 +127,12 @@ def check_source_files():
         sys.exit(1)
     print(f"[√] main_gui.py")
 
+    package_dir = SRC_DIR / "stick_analyzer"
+    if not package_dir.exists():
+        print(f"[X] 找不到 src/stick_analyzer")
+        sys.exit(1)
+    print(f"[√] src/stick_analyzer")
+
     for mod in SUB_MODULES:
         path = PROJECT_DIR / mod
         if path.exists():
@@ -176,6 +195,8 @@ def build(mode: str):
         "--name=StickAnalyzer",
         "--clean",
         "--noconfirm",
+        f"--paths={SRC_DIR}",
+        "--collect-submodules=stick_analyzer",
     ]
 
     for imp in HIDDEN_IMPORTS:

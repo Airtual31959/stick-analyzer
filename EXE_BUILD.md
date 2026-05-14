@@ -10,12 +10,15 @@ python build_exe.py
 
 脚本会自动：
 1. 检查并安装 PyInstaller
-2. 检查 `main_gui.py`，并把 `analyzer.py`、`controller_backend.py`、`error_reporter.py` 作为附加模块打包（如果文件存在）
-3. 让你选择打包模式：回车默认 onedir，输入 `2` 选择 onefile
-4. onedir 输出到 `dist/StickAnalyzer/StickAnalyzer.exe`，onefile 输出到 `dist/StickAnalyzer.exe`
-5. onedir 打包成功后，可按提示自动生成 `dist/StickAnalyzer.zip`
+2. 检查根入口 `main_gui.py` 和 `src/stick_analyzer` 包，并把 `src` 加入 PyInstaller 包搜索路径
+3. 收集 `stick_analyzer` 子模块，同时保留 `analyzer.py`、`controller_backend.py`、`error_reporter.py` 兼容模块的附加打包处理（如果文件存在）
+4. 让你选择打包模式：回车默认 onedir，输入 `2` 选择 onefile
+5. onedir 输出到 `dist/StickAnalyzer/StickAnalyzer.exe`，onefile 输出到 `dist/StickAnalyzer.exe`
+6. onedir 打包成功后，可按提示自动生成 `dist/StickAnalyzer.zip`
 
 打包过程大约 1-2 分钟，最终 EXE 大小约 80-150MB（包含了 matplotlib、pandas 等所有依赖）。
+
+源码运行和打包入口仍是根目录 `main_gui.py`；实际 GUI、应用服务、领域逻辑和适配器实现位于 `src/stick_analyzer/`。
 
 ## 使用方法
 
@@ -83,4 +86,5 @@ python build_exe.py
 ### Q: 打包失败？
 - 查看错误信息，最常见的是依赖缺失
 - 先确认能直接运行：`python main_gui.py`，能跑通再打包
+- 开发验证可先运行：`.\scripts\verify.ps1`
 - PyInstaller 版本建议 6.0+

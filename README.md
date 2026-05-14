@@ -126,6 +126,9 @@ pip install -r requirements.txt
 python main_gui.py
 ```
 
+`main_gui.py` 保持为源码运行和打包入口；实际 GUI、应用服务、领域逻辑和适配器实现已迁入 `src/stick_analyzer/` 包内。
+开发时如果需要直接 `import stick_analyzer`，请先执行 `pip install -e .`，或在当前 shell 设置 `PYTHONPATH=src`。
+
 ### 数据和配置保存位置
 
 - 录制 CSV、分析报告和图表默认保存到 `~/.stickanalyzer/data`
@@ -138,7 +141,7 @@ python build_exe.py
 # 回车默认选 1（onedir 推荐），输入 2 生成 onefile
 ```
 
-输出在 `dist/` 目录：onedir 模式生成 `dist/StickAnalyzer/StickAnalyzer.exe`，可按提示打包为 `dist/StickAnalyzer.zip`；onefile 模式生成 `dist/StickAnalyzer.exe`。
+输出在 `dist/` 目录：onedir 模式生成 `dist/StickAnalyzer/StickAnalyzer.exe`，可按提示打包为 `dist/StickAnalyzer.zip`；onefile 模式生成 `dist/StickAnalyzer.exe`。打包脚本会继续使用根目录 `main_gui.py` 作为 PyInstaller 入口，并自动把 `src` 加入包搜索路径以包含 `stick_analyzer` 包。
 
 ### 开发验证
 
