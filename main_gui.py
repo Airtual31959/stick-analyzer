@@ -42,6 +42,7 @@ try:
         get_default_output_dir,
         resolve_output_dir,
     )
+    from stick_analyzer.application import AnalyzeRecording, AnalyzeRecordingRequest
 except ModuleNotFoundError:
     from src.stick_analyzer.app_paths import (
         get_app_data_dir,
@@ -49,6 +50,7 @@ except ModuleNotFoundError:
         get_default_output_dir,
         resolve_output_dir,
     )
+    from src.stick_analyzer.application import AnalyzeRecording, AnalyzeRecordingRequest
 
 # 引入控制器抽象层
 try:
@@ -2270,94 +2272,21 @@ class App(tk.Tk):
 
     def _run_analyzer(self, csv_path, max_events, min_dur):
         try:
-            analyzer = _import_analyzer()
-            if analyzer is None:
+            if _import_analyzer() is None:
                 self.after(0, self._result_log,
                            "[错误] 找不到 analyzer.py，请确认它和本程序在同一目录")
-                self.after(0, lambda: self.analyze_btn.configure(state="normal"))
                 return
 
-            csv_p = Path(csv_path)
-            df, metadata = analyzer.load_csv(csv_p)
-            thresholds = analyzer.get_stability_thresholds(metadata)
-
-            if "fire" not in df.columns:
-                self.after(0, self._result_log,
-                           "[错误] CSV 缺少 fire 列，请用本工具重新录制")
-                self.after(0, lambda: self.analyze_btn.configure(state="normal"))
-                return
-
-            bursts = analyzer.detect_fire_bursts(df, min_dur)
-            self.after(0, self._result_log,
-                       f"检测到 {len(bursts)} 次开火爆发")
-
-            if not bursts:
-                self.after(0, self._result_log,
-                           "[警告] 没有检测到开火事件，请检查录制时按键设置")
-                self.after(0, lambda: self.analyze_btn.configure(state="normal"))
-                return
-
-            if len(bursts) > max_events:
-                self.after(0, self._result_log,
-                           f"事件过多，仅分析最后 {max_events} 次")
-                bursts = bursts[-max_events:]
-
-            try:
-                nfx = float(metadata.get("noise_floor_x", "0") or 0)
-                nfy = float(metadata.get("noise_floor_y", "0") or 0)
-            except (ValueError, TypeError):
-                nfx = nfy = 0.0
-            if nfx > 0 or nfy > 0:
-                self.after(0, self._result_log,
-                           f"应用硬件本底校准：X={nfx:.5f}  Y={nfy:.5f}")
-
-            weapon_rpm = analyzer.detect_weapon_rpm(metadata.get("weapons", ""))
-            if weapon_rpm > 0:
-                self.after(0, self._result_log,
-                           f"武器识别：{metadata.get('weapons', '')}（{weapon_rpm} RPM）")
-
-            events = []
-            base = csv_p.stem
-            out_dir = csv_p.parent
-
-            for i, (b_start, b_end) in enumerate(bursts, 1):
-                m = analyzer.analyze_burst(
-                    df, b_start, b_end,
-                    noise_floor_x=nfx,
-                    noise_floor_y=nfy,
-                    weapon_rpm=weapon_rpm)
-                if m is None:
-                    continue
-                cls = analyzer.classify_burst(m)
-                events.append({"index": i, "metrics": m, "classification": cls})
-
-                png_path = out_dir / f"{base}_event_{i:02d}.png"
-                title = (f"开火 #{i} @ {b_start:.2f}s 持续{m['duration']:.2f}s | "
-                         f"{'ADS' if m['is_ads'] else '腰射'} | {cls}")
-                analyzer.plot_burst(m, png_path, title)
-
-                self.after(0, self._result_log,
-                           f"  [{i}/{len(bursts)}] @ {b_start:6.2f}s | {cls}")
-
-            summary_path = out_dir / f"{base}_summary.png"
-            analyzer.plot_summary(events, summary_path)
-
-            report = analyzer.generate_report(events, csv_p, metadata, thresholds)
-            report_path = out_dir / f"{base}_report.txt"
-            report_path.write_text(report, encoding="utf-8")
-
-            self.after(0, self._result_log, "\n" + "=" * 50)
-            self.after(0, self._result_log, "分析完成！\n")
-            self.after(0, self._result_log, report)
-            self.after(0, self._result_log, f"\n报告：{report_path}")
-            self.after(0, self._result_log, f"总览图：{summary_path}")
-
-            self.last_report_content = report
-            self._last_output_dir = out_dir
-
-            self.after(0, lambda: self.open_dir_btn.configure(state="normal"))
-            self.after(0, lambda: self.go_to_ai_btn.configure(state="normal"))
-            self.after(0, self._refresh_prompt_template)
+            request = AnalyzeRecordingRequest(
+                csv_path=Path(csv_path),
+                max_events=max_events,
+                min_duration_s=min_dur,
+            )
+            result = AnalyzeRecording().execute(
+                request,
+                progress=self._queue_analysis_progress,
+            )
+            self.after(0, self._handle_analysis_success, result)
 
         except Exception as e:
             import traceback
@@ -2372,6 +2301,23 @@ class App(tk.Tk):
 
         finally:
             self.after(0, lambda: self.analyze_btn.configure(state="normal"))
+
+    def _queue_analysis_progress(self, progress):
+        self.after(0, self._result_log, progress.message)
+
+    def _handle_analysis_success(self, result):
+        self._result_log("\n" + "=" * 50)
+        self._result_log("分析完成！\n")
+        self._result_log(result.report_text)
+        self._result_log(f"\n报告：{result.report_path}")
+        self._result_log(f"总览图：{result.summary_image_path}")
+
+        self.last_report_content = result.report_text
+        self._last_output_dir = result.report_path.parent
+
+        self.open_dir_btn.configure(state="normal")
+        self.go_to_ai_btn.configure(state="normal")
+        self._refresh_prompt_template()
 
     def _open_output_dir(self):
         if hasattr(self, "_last_output_dir"):
