@@ -48,6 +48,27 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib import font_manager
 
+try:
+    from stick_analyzer.application import (
+        AnalysisResult,
+        AnalyzeRecording,
+        AnalyzeRecordingRequest,
+    )
+    from stick_analyzer.application.use_cases import (
+        MissingFireColumnError,
+        NoFireBurstsError,
+    )
+except ModuleNotFoundError:
+    from src.stick_analyzer.application import (
+        AnalysisResult,
+        AnalyzeRecording,
+        AnalyzeRecordingRequest,
+    )
+    from src.stick_analyzer.application.use_cases import (
+        MissingFireColumnError,
+        NoFireBurstsError,
+    )
+
 # 中文字体 - 自动检测系统可用中文字体
 def _setup_chinese_font():
     """智能配置中文字体，兼容 PyInstaller 打包"""
@@ -1519,7 +1540,7 @@ def generate_report(events: list, csv_path: Path,
     return "\n".join(L)
 
 
-def main():
+def _build_arg_parser():
     parser = argparse.ArgumentParser(
         description="摇杆数据分析器")
     parser.add_argument("csv_file", help="stick_logger 输出的 CSV 文件")
@@ -1528,88 +1549,81 @@ def main():
     parser.add_argument("--min_duration", type=float,
                         default=DEFAULT_MIN_DURATION_S,
                         help="最短爆发持续秒数，过滤误触（默认0.05）")
-    args = parser.parse_args()
+    return parser
+
+
+def _print_analysis_progress(progress):
+    if progress.step == "detect_bursts":
+        print(f"[*] {progress.message}")
+    elif progress.step == "truncate_bursts":
+        print(f"[!] {progress.message}")
+    elif progress.step in {"noise_floor", "weapon"}:
+        print(f"[√] {progress.message}")
+    elif progress.step == "analyze_burst" and progress.current == 1:
+        print("[*] 开始分析...")
+
+
+def _format_metric_value(value):
+    try:
+        if np.isnan(value):
+            return "N/A"
+    except TypeError:
+        return "N/A"
+    return f"{value:.4f}"
+
+
+def _print_event_summaries(result: AnalysisResult):
+    total = len(result.events)
+    for position, event in enumerate(result.events, 1):
+        metrics = event["metrics"]
+        classification = str(event["classification"])
+        event_index = int(event.get("index", position))
+        burst_start = float(metrics.get("burst_start", 0.0))
+        pre_str = _format_metric_value(metrics.get("pre_stability"))
+        dur_str = _format_metric_value(metrics.get("during_stability"))
+        reversals = int(metrics.get("total_reversals", 0))
+        print(f"  [{event_index}/{total}] @ {burst_start:6.2f}s | "
+              f"{classification:18} | 前稳={pre_str} | 中稳={dur_str} | "
+              f"反转={reversals:3d}")
+
+
+def _print_analysis_result(result: AnalysisResult):
+    _print_event_summaries(result)
+    print(f"[√] 总览图：{result.summary_image_path}")
+    print()
+    print(result.report_text)
+    print()
+    print(f"[√] 报告已保存：{result.report_path}")
+
+
+def main(argv=None):
+    args = _build_arg_parser().parse_args(argv)
 
     csv_path = Path(args.csv_file)
     if not csv_path.exists():
         print(f"[X] 找不到文件：{csv_path}")
         sys.exit(1)
 
-    df, metadata = load_csv(csv_path)
-    thresholds = get_stability_thresholds(metadata)
+    request = AnalyzeRecordingRequest(
+        csv_path=csv_path,
+        max_events=args.max_events,
+        min_duration_s=args.min_duration,
+    )
 
-    if "fire" not in df.columns:
-        print(f"[X] CSV 缺少 fire 列，请用本工具最新版本的 stick_logger.py 重新录制")
+    # 脚本模式下当前模块名是 __main__，显式传入可避免用例默认再次 import analyzer.py。
+    use_case = AnalyzeRecording(analyzer=sys.modules[__name__])
+    try:
+        result = use_case.execute(request, _print_analysis_progress)
+    except MissingFireColumnError:
+        print("[X] CSV 缺少 fire 列，请用本工具最新版本的 stick_logger.py 重新录制")
         sys.exit(1)
-
-    bursts = detect_fire_bursts(df, args.min_duration)
-    print(f"[*] 检测到 {len(bursts)} 次开火爆发")
-    if not bursts:
+    except NoFireBurstsError:
         print("[X] 没有检测到任何开火事件")
         print("    请确认 stick_logger.py 顶部的 FIRE_BUTTON 配置正确")
         print("    （你的开火键应配置为 RIGHT_SHOULDER）")
         sys.exit(1)
 
-    if len(bursts) > args.max_events:
-        print(f"[!] 事件过多，仅分析最后 {args.max_events} 次")
-        bursts = bursts[-args.max_events:]
-
-    print(f"[*] 开始分析...")
-    events = []
-    base = csv_path.stem
-    out_dir = csv_path.parent
-
-    # [T0.3] 从元数据取本底（录制前校准时写入），分析时减除
-    try:
-        nfx = float(metadata.get("noise_floor_x", "0") or 0)
-        nfy = float(metadata.get("noise_floor_y", "0") or 0)
-    except (ValueError, TypeError):
-        nfx = nfy = 0.0
-    if nfx > 0 or nfy > 0:
-        print(f"[√] 应用硬件本底校准：X={nfx:.5f}  Y={nfy:.5f}")
-
-    # [T2.3] 从元数据推断武器 RPM，用于动态调整 during 窗口
-    weapon_rpm = detect_weapon_rpm(metadata.get("weapons", ""))
-    if weapon_rpm > 0:
-        win_ms = rpm_to_during_window_ms(weapon_rpm)
-        if win_ms <= 0:
-            print(f"[√] 武器识别：{metadata['weapons']}（{weapon_rpm} RPM，"
-                  f"单发/拉栓 → 跳过开火中稳定度分析）")
-        else:
-            print(f"[√] 武器识别：{metadata['weapons']}（{weapon_rpm} RPM，"
-                  f"开火中窗口={win_ms}ms）")
-
-    for i, (b_start, b_end) in enumerate(bursts, 1):
-        m = analyze_burst(df, b_start, b_end,
-                          noise_floor_x=nfx, noise_floor_y=nfy,
-                          weapon_rpm=weapon_rpm)
-        if m is None:
-            continue
-        cls = classify_burst(m)
-        events.append({"index": i, "metrics": m, "classification": cls})
-
-        png_path = out_dir / f"{base}_event_{i:02d}.png"
-        title = (f"开火 #{i} @ {b_start:.2f}s 持续{m['duration']:.2f}s | "
-                 f"{'ADS' if m['is_ads'] else '腰射'} | {cls}")
-        plot_burst(m, png_path, title)
-        pre = m["pre_stability"]
-        dur = m["during_stability"]
-        pre_str = f"{pre:.4f}" if not np.isnan(pre) else "N/A"
-        dur_str = f"{dur:.4f}" if not np.isnan(dur) else "N/A"
-        print(f"  [{i}/{len(bursts)}] @ {b_start:6.2f}s | {cls:18} | "
-              f"前稳={pre_str} | 中稳={dur_str} | 反转={m['total_reversals']:3d}")
-
-    summary_path = out_dir / f"{base}_summary.png"
-    plot_summary(events, summary_path)
-    print(f"[√] 总览图：{summary_path}")
-
-    report = generate_report(events, csv_path, metadata, thresholds)
-    report_path = out_dir / f"{base}_report.txt"
-    report_path.write_text(report, encoding="utf-8")
-    print()
-    print(report)
-    print()
-    print(f"[√] 报告已保存：{report_path}")
+    _print_analysis_result(result)
 
 
 if __name__ == "__main__":
