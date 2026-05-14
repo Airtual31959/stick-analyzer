@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import main_gui
+from stick_analyzer import app_paths
 
 
 class _Var:
@@ -27,6 +28,15 @@ class _ConfigOwner:
 
 
 def test_default_output_dir_uses_app_data_subdirectory(tmp_path):
+    app_data_dir = Path(tmp_path) / ".stickanalyzer"
+    expected = Path(tmp_path) / ".stickanalyzer" / "data"
+
+    assert app_paths.get_app_data_dir(tmp_path) == app_data_dir
+    assert app_paths.get_config_path(tmp_path) == app_data_dir / "config.json"
+    assert app_paths.get_default_output_dir(tmp_path) == expected
+    assert app_paths.resolve_output_dir({}, tmp_path) == expected
+    assert main_gui.get_app_data_dir(tmp_path) == app_data_dir
+    assert main_gui.get_config_path(tmp_path) == app_data_dir / "config.json"
     assert main_gui.get_default_output_dir(tmp_path) == (
         Path(tmp_path) / ".stickanalyzer" / "data"
     )
@@ -38,6 +48,7 @@ def test_default_output_dir_uses_app_data_subdirectory(tmp_path):
 def test_resolve_output_dir_keeps_saved_directory():
     cfg = {"out_dir": "~/custom-stick-data"}
 
+    assert str(app_paths.resolve_output_dir(cfg)).endswith("custom-stick-data")
     assert str(main_gui.resolve_output_dir(cfg)).endswith("custom-stick-data")
 
 

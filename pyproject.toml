@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "stick-analyzer"
+version = "2.1.0"
+description = "Desktop tool for recording and analyzing controller stick behavior."
+readme = "README.md"
+requires-python = ">=3.10,<3.13"
+license = { file = "LICENSE" }
+dependencies = [
+    "pygame>=2.5.0,<3",
+    "XInput-Python>=0.4.0,<1",
+    "matplotlib>=3.8.0,<4",
+    "numpy>=1.24.0,<2",
+    "pandas>=2.2.0,<2.3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0,<9",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

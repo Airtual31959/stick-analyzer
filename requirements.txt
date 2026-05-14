@@ -2,15 +2,16 @@
 
 # 控制器输入支持
 # pygame: 支持 PS4/PS5/DualSense Edge/Switch Pro/各种第三方手柄（推荐主驱动）
-pygame>=2.5.0
+pygame>=2.5.0,<3
 
 # XInput-Python: 支持 XBOX 系列手柄（备选驱动，pygame 不可用时回退）
-XInput-Python>=0.4.0
+XInput-Python>=0.4.0,<1
 
 # 数据处理与可视化
-matplotlib>=3.7.0
-numpy>=1.24.0
-pandas>=2.0.0
+matplotlib>=3.8.0,<4
+# 约束 NumPy 1.x，避免 pandas/pyarrow 二进制扩展在 NumPy 2.x 下出现 ABI 不兼容。
+numpy>=1.24.0,<2
+pandas>=2.2.0,<2.3
 
 # 可选：仅在打包 EXE 时需要
 # pyinstaller>=6.0.0
