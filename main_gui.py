@@ -2245,12 +2245,30 @@ class App(tk.Tk):
                            f"事件过多，仅分析最后 {max_events} 次")
                 bursts = bursts[-max_events:]
 
+            try:
+                nfx = float(metadata.get("noise_floor_x", "0") or 0)
+                nfy = float(metadata.get("noise_floor_y", "0") or 0)
+            except (ValueError, TypeError):
+                nfx = nfy = 0.0
+            if nfx > 0 or nfy > 0:
+                self.after(0, self._result_log,
+                           f"应用硬件本底校准：X={nfx:.5f}  Y={nfy:.5f}")
+
+            weapon_rpm = analyzer.detect_weapon_rpm(metadata.get("weapons", ""))
+            if weapon_rpm > 0:
+                self.after(0, self._result_log,
+                           f"武器识别：{metadata.get('weapons', '')}（{weapon_rpm} RPM）")
+
             events = []
             base = csv_p.stem
             out_dir = csv_p.parent
 
             for i, (b_start, b_end) in enumerate(bursts, 1):
-                m = analyzer.analyze_burst(df, b_start, b_end)
+                m = analyzer.analyze_burst(
+                    df, b_start, b_end,
+                    noise_floor_x=nfx,
+                    noise_floor_y=nfy,
+                    weapon_rpm=weapon_rpm)
                 if m is None:
                     continue
                 cls = analyzer.classify_burst(m)
