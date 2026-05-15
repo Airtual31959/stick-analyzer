@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from stick_analyzer.domain.constants import DURING_FIRE_STABILITY_MS
-from stick_analyzer.domain.services.weapon_policy import WeaponPolicy
+from app.domain.constants import DURING_FIRE_STABILITY_MS
+from app.domain.services.weapon_policy import WeaponPolicy
 
 
 @pytest.mark.parametrize(

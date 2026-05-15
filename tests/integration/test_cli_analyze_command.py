@@ -43,15 +43,16 @@ def _install_analyzer_import_fakes(monkeypatch):
 
 @pytest.fixture
 def analyzer_cli(monkeypatch):
-    previous_analyzer = sys.modules.pop("analyzer", None)
+    module_name = "app.compat.analyzer"
+    previous_analyzer = sys.modules.pop(module_name, None)
     _install_analyzer_import_fakes(monkeypatch)
-    module = importlib.import_module("analyzer")
+    module = importlib.import_module(module_name)
     try:
         yield module
     finally:
-        sys.modules.pop("analyzer", None)
+        sys.modules.pop(module_name, None)
         if previous_analyzer is not None:
-            sys.modules["analyzer"] = previous_analyzer
+            sys.modules[module_name] = previous_analyzer
 
 
 def test_main_calls_analyze_recording_with_current_module_and_prints_result(
@@ -156,13 +157,13 @@ def test_main_exits_when_csv_is_missing(analyzer_cli, tmp_path, capsys):
     [
         (
             "MissingFireColumnError",
-            ["[X] CSV 缺少 fire 列，请用本工具最新版本的 stick_logger.py 重新录制"],
+            ["[X] CSV 缺少 fire 列，请用本工具最新版本重新录制"],
         ),
         (
             "NoFireBurstsError",
             [
                 "[X] 没有检测到任何开火事件",
-                "请确认 stick_logger.py 顶部的 FIRE_BUTTON 配置正确",
+                "请确认 GUI 中的 FIRE_BUTTON 配置正确",
                 "（你的开火键应配置为 RIGHT_SHOULDER）",
             ],
         ),

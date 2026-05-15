@@ -26,29 +26,48 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, messagebox
 
+try:
+    from app.adapters.ui.theme import FONT_BODY, FONT_BODY_BOLD, FONT_MONO, FONT_SMALL
+except ModuleNotFoundError:
+    try:
+        from src.app.adapters.ui.theme import FONT_BODY, FONT_BODY_BOLD, FONT_MONO, FONT_SMALL
+    except ModuleNotFoundError:
+        FONT_BODY = ("NSimSun", 15)
+        FONT_BODY_BOLD = ("NSimSun", 15, "bold")
+        FONT_MONO = ("NSimSun", 14)
+        FONT_SMALL = ("NSimSun", 13)
+
 
 # 错误日志文件路径（在用户家目录或当前目录）
 def _get_log_dir() -> Path:
-    """获取日志目录。优先用程序所在目录，其次用户家目录"""
+    """获取日志目录。打包后放程序目录，源码运行放用户数据目录。"""
     try:
-        # 程序所在目录
         if getattr(sys, "frozen", False):
-            # PyInstaller 打包后
             app_dir = Path(sys.executable).parent
-        else:
-            app_dir = Path(__file__).parent
-        if os.access(app_dir, os.W_OK):
-            return app_dir
+            if os.access(app_dir, os.W_OK):
+                return app_dir
     except Exception:
         pass
-    # 兜底：用户家目录
+
+    try:
+        from app.app_paths import get_app_data_dir
+    except ModuleNotFoundError:
+        from src.app.app_paths import get_app_data_dir
+
+    try:
+        log_dir = get_app_data_dir()
+        log_dir.mkdir(parents=True, exist_ok=True)
+        return log_dir
+    except Exception:
+        pass
+
     return Path.home()
 
 
-LOG_FILE = _get_log_dir() / "stick_analyzer_errors.log"
+LOG_FILE = _get_log_dir() / "app_errors.log"
 
 
-# 联系方式（与 main_gui 保持一致）
+# 联系方式（与 GUI 保持一致）
 CONTACT_BILIBILI = "B站 / 抖音: josef_0464"
 CONTACT_QQ_GROUP = "QQ 群: 611624374 (星辰不妙屋)"
 
@@ -75,8 +94,8 @@ def collect_system_info() -> str:
 
     # 工具版本
     try:
-        import main_gui
-        lines.append(f"工具版本: {getattr(main_gui, 'APP_VERSION', '未知')}")
+        from app.version import APP_VERSION
+        lines.append(f"工具版本: {APP_VERSION}")
     except Exception:
         pass
 
@@ -174,13 +193,13 @@ class ErrorReportDialog(tk.Toplevel):
         tk.Label(top_frame,
                  text="⚠ 程序遇到了错误",
                  bg="#FDF2F2", fg="#C92A2A",
-                 font=("Microsoft YaHei", 12, "bold")).pack(anchor="w",
-                                                              padx=10, pady=(8, 4))
+                 font=FONT_BODY_BOLD).pack(anchor="w",
+                                            padx=10, pady=(8, 4))
 
         tk.Label(top_frame,
                  text=f"错误类型: {error_type}",
                  bg="#FDF2F2", fg="#333",
-                 font=("Microsoft YaHei", 9)).pack(anchor="w", padx=10)
+                 font=FONT_SMALL).pack(anchor="w", padx=10)
 
         # 错误消息（限长以免太长）
         msg_short = error_message
@@ -189,7 +208,7 @@ class ErrorReportDialog(tk.Toplevel):
         tk.Label(top_frame,
                  text=f"错误信息: {msg_short}",
                  bg="#FDF2F2", fg="#333",
-                 font=("Microsoft YaHei", 9),
+                 font=FONT_SMALL,
                  wraplength=620, justify="left").pack(anchor="w", padx=10,
                                                        pady=(0, 8))
 
@@ -207,7 +226,7 @@ class ErrorReportDialog(tk.Toplevel):
 
         self.text_widget = tk.Text(text_container,
                                      wrap="word",
-                                     font=("Consolas", 9),
+                                     font=FONT_MONO,
                                      yscrollcommand=scrollbar.set,
                                      height=14)
         self.text_widget.pack(side="left", fill="both", expand=True)
@@ -223,17 +242,17 @@ class ErrorReportDialog(tk.Toplevel):
         tk.Label(contact_frame,
                  text="📮 请把以上错误信息发给作者帮助修复 Bug：",
                  bg="#FFF3CD", fg="#856404",
-                 font=("Microsoft YaHei", 10, "bold")).pack(anchor="w",
-                                                              padx=10, pady=(8, 4))
+                 font=FONT_BODY_BOLD).pack(anchor="w",
+                                            padx=10, pady=(8, 4))
         tk.Label(contact_frame,
                  text=f"  • {CONTACT_BILIBILI}",
                  bg="#FFF3CD", fg="#333",
-                 font=("Microsoft YaHei", 9)).pack(anchor="w", padx=10)
+                 font=FONT_SMALL).pack(anchor="w", padx=10)
         tk.Label(contact_frame,
                  text=f"  • {CONTACT_QQ_GROUP}",
                  bg="#FFF3CD", fg="#333",
-                 font=("Microsoft YaHei", 9)).pack(anchor="w", padx=10,
-                                                    pady=(0, 8))
+                 font=FONT_SMALL).pack(anchor="w", padx=10,
+                                        pady=(0, 8))
 
         # 按钮区
         btn_frame = tk.Frame(self)

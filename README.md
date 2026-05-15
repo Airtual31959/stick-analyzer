@@ -54,7 +54,7 @@
 - 采样率说明：从「链路瓶颈」改为「pygame/SDL 协议上限」（实际就是 ~500-1000Hz，无论手柄多高回报率）
 - RC 措辞：移除"RC 强度过激"误导描述，改为"RC 让摇杆变钝、增加噪声"
 
-完整变更日志见 [CHANGELOG.md](CHANGELOG.md)。
+完整变更日志见 [CHANGELOG.md](docs/CHANGELOG.md)。
 
 ------
 
@@ -123,11 +123,16 @@
 git clone https://github.com/q6666666q/stick-analyzer.git
 cd stick-analyzer
 pip install -r requirements.txt
-python main_gui.py
+python main.py -args gui
 ```
 
-`main_gui.py` 保持为源码运行和打包入口；实际 GUI、应用服务、领域逻辑和适配器实现已迁入 `src/stick_analyzer/` 包内。
-开发时如果需要直接 `import stick_analyzer`，请先执行 `pip install -e .`，或在当前 shell 设置 `PYTHONPATH=src`。
+根目录只保留统一入口 `main.py`；GUI、CLI、应用服务、领域逻辑、错误反馈和适配器实现都位于 `src/app/` 包内。命令行分析使用：
+
+```bash
+python main.py -args cli path/to/record.csv
+```
+
+开发时如果需要直接 `import app`，请先执行 `pip install -e .`，或在当前 shell 设置 `PYTHONPATH=src`。
 
 ### 数据和配置保存位置
 
@@ -137,11 +142,11 @@ python main_gui.py
 ### 方法 3：自己打包 EXE
 
 ```bash
-python build_exe.py
+python -m app.packaging.build_exe
 # 回车默认选 1（onedir 推荐），输入 2 生成 onefile
 ```
 
-输出在 `dist/` 目录：onedir 模式生成 `dist/StickAnalyzer/StickAnalyzer.exe`，可按提示打包为 `dist/StickAnalyzer.zip`；onefile 模式生成 `dist/StickAnalyzer.exe`。打包脚本会继续使用根目录 `main_gui.py` 作为 PyInstaller 入口，并自动把 `src` 加入包搜索路径以包含 `stick_analyzer` 包。
+输出在 `dist/` 目录：onedir 模式生成 `dist/StickAnalyzer/StickAnalyzer.exe`，可按提示打包为 `dist/StickAnalyzer.zip`；onefile 模式生成 `dist/StickAnalyzer.exe`。打包脚本使用根目录 `main.py` 作为 PyInstaller 入口，并自动把 `src` 加入包搜索路径以包含 `app` 包。
 
 ### 开发验证
 
@@ -342,7 +347,7 @@ MIT License — 自由使用、修改、分发，请保留作者信息。
 
 软件遇到错误时会自动弹出反馈窗口，里面包含错误类型、堆栈、系统信息，可以一键复制完整错误信息到剪贴板。把复制的内容发到 QQ 群或私信作者，会尽快修复。
 
-错误日志也会自动保存到程序目录的 `stick_analyzer_errors.log` 文件中。
+错误日志也会自动保存到程序目录的 `app_errors.log` 文件中。
 
 ------
 

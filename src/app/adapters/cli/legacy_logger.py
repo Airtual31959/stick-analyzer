@@ -9,7 +9,7 @@
 使用方法：
 1. 安装依赖：pip install -r requirements.txt
 2. 连接手柄
-3. 运行：python stick_logger.py
+3. 运行：python -m app.adapters.cli.legacy_logger
 4. 打游戏...
 5. Ctrl+C 停止，自动保存为 stick_log_<时间戳>.csv
 
@@ -231,10 +231,10 @@ def main():
             print()
             print("[!] 警告：没有检测到任何开火事件")
             print(f"    请确认你的开火键确实是 {FIRE_BUTTON}")
-            print(f"    如果不是，请编辑 stick_logger.py 顶部的 FIRE_BUTTON 配置")
+            print(f"    如果不是，请调整 legacy_logger.py 顶部的 FIRE_BUTTON 配置")
 
         print()
-        print("下一步：python analyzer.py", output_file.name)
+        print("下一步：python main.py -args cli", output_file.name)
 
 
 if __name__ == "__main__":

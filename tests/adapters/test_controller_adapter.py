@@ -1,26 +1,26 @@
-import controller_backend as compat
-from stick_analyzer.adapters import controller
+from app.adapters import controller
+from app.adapters.controller import controller_manager
 
 
-def test_compat_entry_exports_legacy_public_names():
-    assert compat.PROTO_PYGAME == "pygame"
-    assert compat.PROTO_XINPUT == "xinput"
-    assert compat.LAYOUT_XBOX == "xbox"
-    assert compat.LAYOUT_PS == "ps"
-    assert compat.LAYOUT_PS_EDGE == "ps_edge"
-    assert compat.LAYOUT_SWITCH == "switch"
-    assert compat.LAYOUT_GENERIC == "generic"
-    assert compat.MAX_SLOTS == 4
-    assert compat.LOGICAL_BUTTONS is controller.LOGICAL_BUTTONS
-    assert compat.ControllerInfo is controller.ControllerInfo
-    assert compat.ControllerState is controller.ControllerState
-    assert compat.ControllerManager is controller.ControllerManager
-    assert compat.get_button_display_name is controller.get_button_display_name
-    assert compat.get_button_options_for_layout is controller.get_button_options_for_layout
+def test_controller_entry_exports_public_names():
+    assert controller.PROTO_PYGAME == "pygame"
+    assert controller.PROTO_XINPUT == "xinput"
+    assert controller.LAYOUT_XBOX == "xbox"
+    assert controller.LAYOUT_PS == "ps"
+    assert controller.LAYOUT_PS_EDGE == "ps_edge"
+    assert controller.LAYOUT_SWITCH == "switch"
+    assert controller.LAYOUT_GENERIC == "generic"
+    assert controller.MAX_SLOTS == 4
+    assert controller.LOGICAL_BUTTONS
+    assert controller.ControllerInfo
+    assert controller.ControllerState
+    assert controller.ControllerManager
+    assert controller.get_button_display_name
+    assert controller.get_button_options_for_layout
 
 
 def test_button_options_filter_absent_buttons():
-    options = compat.get_button_options_for_layout(compat.LAYOUT_XBOX)
+    options = controller.get_button_options_for_layout(controller.LAYOUT_XBOX)
     logical_codes = [logical for _display, logical in options]
     display_names = [display for display, _logical in options]
 
@@ -35,13 +35,13 @@ def test_button_options_filter_absent_buttons():
 
 
 def test_xbox_raw_and_sdl_gamecontroller_button_maps_differ():
-    raw_map = compat.get_pygame_button_map(
-        compat.LAYOUT_XBOX,
+    raw_map = controller.get_pygame_button_map(
+        controller.LAYOUT_XBOX,
         num_hats=1,
         num_buttons=11,
     )
-    sdl_map = compat.get_pygame_button_map(
-        compat.LAYOUT_XBOX,
+    sdl_map = controller.get_pygame_button_map(
+        controller.LAYOUT_XBOX,
         num_hats=0,
         num_buttons=15,
     )
@@ -56,7 +56,7 @@ def test_xbox_raw_and_sdl_gamecontroller_button_maps_differ():
 
 
 def test_controller_state_default_is_constructable():
-    state = compat.ControllerState()
+    state = controller.ControllerState()
 
     assert state.lx == 0.0
     assert state.ly == 0.0
@@ -66,3 +66,130 @@ def test_controller_state_default_is_constructable():
     assert state.rt == 0.0
     assert state.buttons == {}
     assert isinstance(state.buttons, dict)
+
+
+def test_controller_manager_prefers_xinput_for_xbox_style_devices(monkeypatch):
+    class FakePygameBackend:
+        def is_available(self):
+            return True
+
+        def scan(self):
+            return [
+                {
+                    "name": "Xbox Wireless Controller",
+                    "guid": "pg-xbox",
+                    "handle": "pg-xbox-handle",
+                    "num_axes": 6,
+                    "num_buttons": 15,
+                    "num_hats": 0,
+                },
+                {
+                    "name": "DualSense Wireless Controller",
+                    "guid": "pg-ps",
+                    "handle": "pg-ps-handle",
+                    "num_axes": 6,
+                    "num_buttons": 16,
+                    "num_hats": 1,
+                },
+            ]
+
+        def detect_layout(self, name, num_buttons):
+            if "DualSense" in name:
+                return controller.LAYOUT_PS
+            return controller.LAYOUT_XBOX
+
+        def read_state(self, _info):
+            return controller.ControllerState(rx=0.1)
+
+    class FakeXInputBackend:
+        def is_available(self):
+            return True
+
+        def scan(self):
+            return [
+                {
+                    "index": 0,
+                    "name": "XInput Controller",
+                    "guid": "xinput_0",
+                    "handle": 0,
+                    "num_axes": 6,
+                    "num_buttons": 14,
+                    "num_hats": 0,
+                }
+            ]
+
+        def read_state(self, _info):
+            return controller.ControllerState(rx=0.9)
+
+    monkeypatch.setattr(controller_manager, "PygameBackend", FakePygameBackend)
+    monkeypatch.setattr(controller_manager, "XInputBackend", FakeXInputBackend)
+
+    manager = controller_manager.ControllerManager()
+    message = manager.scan_and_assign()
+
+    assert message == "扫描完成：检测到 2 个手柄"
+    assert manager.slots[0].name == "Xbox Wireless Controller"
+    assert manager.slots[0].protocol == controller.PROTO_XINPUT
+    assert manager.slots[0].layout == controller.LAYOUT_XBOX
+    assert manager.slots[1].name == "DualSense Wireless Controller"
+    assert manager.slots[1].protocol == controller.PROTO_PYGAME
+    assert manager.slots[1].layout == controller.LAYOUT_PS
+    assert manager.get_current_slot() == 0
+    assert manager.read_state(manager.slots[0]).rx == 0.9
+    assert manager.read_state(manager.slots[1]).rx == 0.1
+
+
+def test_controller_manager_keeps_existing_slot_and_clears_missing_current(monkeypatch):
+    class FakePygameBackend:
+        devices = [
+            {
+                "name": "DualSense Wireless Controller",
+                "guid": "pg-ps",
+                "handle": "new-handle",
+                "num_axes": 6,
+                "num_buttons": 16,
+                "num_hats": 1,
+            }
+        ]
+
+        def is_available(self):
+            return True
+
+        def scan(self):
+            return list(self.devices)
+
+        def detect_layout(self, _name, _num_buttons):
+            return controller.LAYOUT_PS
+
+    class FakeXInputBackend:
+        def is_available(self):
+            return False
+
+        def scan(self):
+            return []
+
+    monkeypatch.setattr(controller_manager, "PygameBackend", FakePygameBackend)
+    monkeypatch.setattr(controller_manager, "XInputBackend", FakeXInputBackend)
+
+    manager = controller_manager.ControllerManager()
+    manager.slots[2] = controller.ControllerInfo(
+        slot=2,
+        name="DualSense Wireless Controller",
+        protocol=controller.PROTO_PYGAME,
+        layout=controller.LAYOUT_PS,
+        guid="pg-ps",
+        handle="old-handle",
+    )
+    manager.set_current_slot(2)
+
+    manager.scan_and_assign()
+
+    assert manager.slots[2] is not None
+    assert manager.slots[2].handle == "new-handle"
+    assert manager.get_current_slot() == 2
+
+    FakePygameBackend.devices = []
+    manager.scan_and_assign()
+
+    assert manager.slots[2] is None
+    assert manager.get_current_slot() is None

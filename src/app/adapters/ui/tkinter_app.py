@@ -31,67 +31,115 @@ from pathlib import Path
 
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext
+import customtkinter as ctk
 
 try:
-    from stick_analyzer.app_paths import (
+    from app.app_paths import (
         get_app_data_dir,
         get_config_path,
         get_default_output_dir,
         resolve_output_dir,
     )
-    from stick_analyzer.application import (
+    from app.application import (
         CalibrationRequest,
         CalibrateController,
         RecordSession,
         RecordingInputError,
         RecordSessionRequest,
     )
-    from stick_analyzer.adapters.storage import CsvRecordingWriter
-    from stick_analyzer.adapters.ui.analyze_tab import (
+    from app.adapters.storage import CsvRecordingWriter
+    from app.adapters.ui.analyze_tab import (
         AnalyzeRecording,
         AnalyzeRecordingRequest,
         AnalyzeTabMixin,
         _import_analyzer,
     )
-    from stick_analyzer.adapters.ui.inverse_tab import InverseTabMixin
-    from stick_analyzer.adapters.ui.prompt_tab import PromptTabMixin
-    from stick_analyzer.adapters.ui.record_tab import RecordTabMixin
+    from app.adapters.ui.inverse_tab import InverseTabMixin
+    from app.adapters.ui.prompt_tab import PromptTabMixin
+    from app.adapters.ui.record_tab import RecordTabMixin
+    from app.adapters.ui.theme import (
+        COLOR_ACCENT_MAGENTA,
+        COLOR_ACCENT_MAGENTA_HOVER,
+        COLOR_ACCENT_ORANGE,
+        COLOR_BG,
+        COLOR_DANGER,
+        COLOR_HOVER_BG,
+        COLOR_LINE,
+        COLOR_LINE_DARK,
+        COLOR_MUTED,
+        COLOR_PANEL,
+        COLOR_TEXT,
+        FONT_BODY,
+        FONT_BODY_BOLD,
+        FONT_FAMILY,
+        FONT_SECTION,
+        FONT_SMALL,
+        FONT_TITLE,
+        configure_notice,
+        line_button,
+        show_message,
+        solid_button,
+        textbox,
+    )
 except ModuleNotFoundError:
-    from src.stick_analyzer.app_paths import (
+    from src.app.app_paths import (
         get_app_data_dir,
         get_config_path,
         get_default_output_dir,
         resolve_output_dir,
     )
-    from src.stick_analyzer.application import (
+    from src.app.application import (
         CalibrationRequest,
         CalibrateController,
         RecordSession,
         RecordingInputError,
         RecordSessionRequest,
     )
-    from src.stick_analyzer.adapters.storage import CsvRecordingWriter
-    from src.stick_analyzer.adapters.ui.analyze_tab import (
+    from src.app.adapters.storage import CsvRecordingWriter
+    from src.app.adapters.ui.analyze_tab import (
         AnalyzeRecording,
         AnalyzeRecordingRequest,
         AnalyzeTabMixin,
         _import_analyzer,
     )
-    from src.stick_analyzer.adapters.ui.inverse_tab import InverseTabMixin
-    from src.stick_analyzer.adapters.ui.prompt_tab import PromptTabMixin
-    from src.stick_analyzer.adapters.ui.record_tab import RecordTabMixin
+    from src.app.adapters.ui.inverse_tab import InverseTabMixin
+    from src.app.adapters.ui.prompt_tab import PromptTabMixin
+    from src.app.adapters.ui.record_tab import RecordTabMixin
+    from src.app.adapters.ui.theme import (
+        COLOR_ACCENT_MAGENTA,
+        COLOR_ACCENT_MAGENTA_HOVER,
+        COLOR_ACCENT_ORANGE,
+        COLOR_BG,
+        COLOR_DANGER,
+        COLOR_HOVER_BG,
+        COLOR_LINE,
+        COLOR_LINE_DARK,
+        COLOR_MUTED,
+        COLOR_PANEL,
+        COLOR_TEXT,
+        FONT_BODY,
+        FONT_BODY_BOLD,
+        FONT_FAMILY,
+        FONT_SECTION,
+        FONT_SMALL,
+        FONT_TITLE,
+        configure_notice,
+        line_button,
+        show_message,
+        solid_button,
+        textbox,
+    )
 
-# 引入控制器抽象层
 try:
-    import controller_backend as cb
-except ImportError:
-    cb = None
-
-# 引入错误反馈模块
-try:
-    import error_reporter
-except ImportError:
-    error_reporter = None
+    from app.adapters import controller as cb
+    from app.adapters.ui import error_reporter
+except ModuleNotFoundError:
+    try:
+        from src.app.adapters import controller as cb
+        from src.app.adapters.ui import error_reporter
+    except ModuleNotFoundError:
+        cb = None
+        error_reporter = None
 
 # ==================== 默认配置 ====================
 DEFAULT_FIRE_BUTTON = "RIGHT_SHOULDER"   # 逻辑代码（RB / R1 / R 等等）
@@ -101,6 +149,17 @@ TARGET_RATE_HZ = 500   # pygame 实际能力 ~500Hz；XInput 也用同值确保 
 
 APP_VERSION = "v2.1"
 # ===================================================
+
+ctk.set_appearance_mode("light")
+ctk.set_default_color_theme("blue")
+ctk.set_widget_scaling(1.08)
+
+NAV_ITEMS = (
+    ("record", "01", "录制摇杆数据", "RECORD"),
+    ("analyze", "02", "分析数据", "ANALYZE"),
+    ("prompt", "03", "生成 AI 调参提示词", "PROMPT"),
+    ("inverse", "04", "参考曲线收集", "REFERENCE"),
+)
 
 
 class _SystemClock:
@@ -184,7 +243,7 @@ class StickRecorder:
     def _run(self):
         if cb is None:
             self.on_done(False,
-                "controller_backend.py 模块未找到，请确认它和本程序在同一目录")
+                "控制器模块未找到，请确认程序文件完整")
             return
 
         if self.controller_info is None:
@@ -238,11 +297,13 @@ class StickRecorder:
         self.on_done(True, _recording_summary_to_dict(summary))
 
 
-class App(RecordTabMixin, AnalyzeTabMixin, PromptTabMixin, InverseTabMixin, tk.Tk):
+class App(RecordTabMixin, AnalyzeTabMixin, PromptTabMixin, InverseTabMixin, ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title(f"摇杆射击行为分析工具 {APP_VERSION}")
-        self.geometry("1000x1100")
+        self.geometry("1180x920")
+        self.minsize(1040, 720)
+        self.configure(fg_color=COLOR_BG)
         self.recorder = None
         self.csv_path_var = tk.StringVar()
         self.last_report_content = ""
@@ -280,6 +341,21 @@ class App(RecordTabMixin, AnalyzeTabMixin, PromptTabMixin, InverseTabMixin, tk.T
         # 异步启动控制器后端：mainloop 启动后 50ms 触发，确保窗口已渲染
         self.after(50, self._async_bootstrap_controllers)
 
+    def _is_window_alive(self) -> bool:
+        try:
+            return bool(self.winfo_exists())
+        except tk.TclError:
+            return False
+
+    def _schedule_bootstrap_done(self, mgr, scan_msg: str, err_msg) -> None:
+        """窗口已关闭时丢弃后台初始化结果，避免 Tk 回调访问失效控件。"""
+        if not self._is_window_alive():
+            return
+        try:
+            self.after(0, self._on_bootstrap_done, mgr, scan_msg, err_msg)
+        except tk.TclError:
+            return
+
     def _async_bootstrap_controllers(self):
         """[T-1.2] 在后台线程里创建 ControllerManager 并扫描手柄。
 
@@ -291,22 +367,26 @@ class App(RecordTabMixin, AnalyzeTabMixin, PromptTabMixin, InverseTabMixin, tk.T
         如果 cb 模块本身缺失，本方法会立即在主线程报错（不需要后台线程）。
         """
         if cb is None:
-            messagebox.showerror(
+            show_message(
+                "error",
                 "缺少模块",
-                "找不到 controller_backend.py 模块，请确认它和本程序在同一目录")
+                "找不到控制器模块，请确认程序文件完整",
+                parent=self,
+            )
             self._init_pending = False
             try:
-                self.scan_status_label.configure(
-                    text="后端模块缺失，无法识别手柄",
-                    foreground="#C0392B")
+                configure_notice(
+                    self.scan_status_label,
+                    "后端模块缺失，无法识别手柄",
+                    "error",
+                )
             except Exception:
                 pass
             return
 
         # 显示"初始化中"
         try:
-            self.scan_status_label.configure(
-                text="正在初始化手柄驱动…", foreground="#2980B9")
+            configure_notice(self.scan_status_label, "正在初始化手柄驱动…")
         except Exception:
             pass
 
@@ -326,8 +406,8 @@ class App(RecordTabMixin, AnalyzeTabMixin, PromptTabMixin, InverseTabMixin, tk.T
                 import traceback
                 err_msg = f"{e}\n\n{traceback.format_exc()}"
 
-            # 切回主线程更新 UI
-            self.after(0, self._on_bootstrap_done, mgr, scan_msg, err_msg)
+            # 切回主线程更新 UI；窗口可能已经被用户关闭。
+            self._schedule_bootstrap_done(mgr, scan_msg, err_msg)
 
         threading.Thread(
             target=_bootstrap_worker,
@@ -337,16 +417,24 @@ class App(RecordTabMixin, AnalyzeTabMixin, PromptTabMixin, InverseTabMixin, tk.T
 
     def _on_bootstrap_done(self, mgr, scan_msg: str, err_msg):
         """[T-1.2] 异步初始化完成回调，运行在主线程。"""
+        if not self._is_window_alive():
+            return
+
         self._init_pending = False
 
         if err_msg is not None:
-            messagebox.showerror(
+            show_message(
+                "error",
                 "驱动初始化失败",
-                "控制器驱动初始化时出错：\n\n" + err_msg)
+                "控制器驱动初始化时出错：\n\n" + err_msg,
+                parent=self,
+            )
             try:
-                self.scan_status_label.configure(
-                    text="驱动初始化失败，请重启程序",
-                    foreground="#C0392B")
+                configure_notice(
+                    self.scan_status_label,
+                    "驱动初始化失败，请重启程序",
+                    "error",
+                )
             except Exception:
                 pass
             return
@@ -355,22 +443,28 @@ class App(RecordTabMixin, AnalyzeTabMixin, PromptTabMixin, InverseTabMixin, tk.T
 
         # 检查驱动可用性（迁移自原 __init__）
         if mgr is not None and not mgr.has_pygame() and not mgr.has_xinput():
-            messagebox.showerror(
+            show_message(
+                "error",
                 "缺少驱动库",
                 "未检测到 pygame 或 XInput-Python 库。\n"
-                "请运行：pip install pygame XInput-Python")
+                "请运行：pip install pygame XInput-Python",
+                parent=self,
+            )
 
         # 把首次扫描的结果显示出来 + 刷新 UI
         try:
             if scan_msg:
-                self.scan_status_label.configure(text=scan_msg, foreground="#222")
+                configure_notice(self.scan_status_label, scan_msg)
             self._refresh_slot_display()
             self._refresh_button_combos_for_current_slot()
+        except tk.TclError:
+            return
         except Exception as e:
             print(f"[警告] 初始扫描后刷新 UI 失败: {e}")
 
         # [T0.1] 首次启动显示欢迎面板（用 after 让 UI 先渲染）
-        self.after(300, self._show_welcome_if_needed)
+        if self._is_window_alive():
+            self.after(300, self._show_welcome_if_needed)
 
     # ========== [T0.1] 欢迎面板 ==========
     def _config_path(self) -> Path:
@@ -423,68 +517,59 @@ class App(RecordTabMixin, AnalyzeTabMixin, PromptTabMixin, InverseTabMixin, tk.T
         if cfg.get("welcome_seen") is True:
             return
 
-        dlg = tk.Toplevel(self)
+        dlg = ctk.CTkToplevel(self, fg_color=COLOR_BG)
         dlg.title("欢迎使用摇杆射击行为分析工具")
-        dlg.geometry("620x520")
+        dlg.geometry("660x430")
         dlg.transient(self)
         dlg.resizable(False, False)
         # 居中
         dlg.update_idletasks()
-        x = self.winfo_rootx() + (self.winfo_width() - 620) // 2
-        y = self.winfo_rooty() + (self.winfo_height() - 520) // 2
+        x = self.winfo_rootx() + (self.winfo_width() - 660) // 2
+        y = self.winfo_rooty() + (self.winfo_height() - 430) // 2
         dlg.geometry(f"+{max(0, x)}+{max(0, y)}")
 
-        # 标题
-        ttk.Label(
+        ctk.CTkLabel(
             dlg,
             text="欢迎使用 摇杆射击行为分析工具",
-            font=("", 16, "bold")).pack(pady=(18, 4))
-        ttk.Label(
+            font=FONT_SECTION,
+            text_color=COLOR_TEXT,
+        ).pack(anchor="w", padx=28, pady=(24, 4))
+        ctk.CTkLabel(
             dlg,
-            text="一个用来量化你压枪稳不稳、反推曲线该怎么调的工具",
-            foreground="#555").pack(pady=(0, 18))
+            text="录制手柄摇杆轨迹，分析压枪稳定度，再生成可复制的调参提示词。",
+            font=FONT_BODY,
+            text_color=COLOR_MUTED,
+        ).pack(anchor="w", padx=28, pady=(0, 18))
+        ctk.CTkFrame(dlg, height=1, fg_color=COLOR_LINE).pack(
+            fill="x", padx=28, pady=(0, 16))
 
-        # 内容区
-        body_frame = ttk.Frame(dlg)
-        body_frame.pack(fill="both", expand=True, padx=24, pady=0)
+        body_frame = ctk.CTkFrame(dlg, fg_color="transparent")
+        body_frame.pack(fill="both", expand=True, padx=28, pady=0)
 
         what_text = (
-            "【适合谁】\n"
-            "  • FPS 手柄玩家（Apex / 战地 / TheFinals 等）\n"
-            "  • 已经在用调参 APP（北通 / 飞智 / 莱仕达 / 八位堂等）改过曲线，\n"
-            "    但不确定"
-            "改的方向对不对的人\n"
-            "  • 想知道自己压枪到底稳在哪、不稳在哪的人\n"
-            "\n"
-            "【不适合谁】\n"
-            "  • 鼠标键盘玩家（本工具只分析摇杆数据）\n"
-            "  • 想用工具判断手柄硬件是否损坏（这不是测试仪）\n"
-            "\n"
-            "【工作流：3 步】\n"
-            "  ① 录制：连上手柄，正常打一局靶场或匹配 → 软件记录摇杆轨迹\n"
-            "  ② 分析：上传刚才录的 CSV → 看自己稳定度评分和波形\n"
-            "  ③ 调参：复制软件生成的提示词到 AI（如 Claude），让它帮你改曲线\n"
-            "\n"
-            "【录制前会有 3 秒静止校准】\n"
-            "  程序会让你松开摇杆 3 秒，记录传感器本底（用来让分析更准）。\n"
-            "  这是正常步骤，不是 bug。"
+            "1. 录制：连接手柄，完成 3 秒静止校准后开始采集。\n"
+            "2. 分析：选择刚生成的 CSV，查看稳定度、采样率和报告。\n"
+            "3. 调参：复制提示词给 AI，结合你的曲线节点和体感痛点调整。\n\n"
+            "本工具只读取手柄输入，不向游戏发送操作，也不读取游戏画面。"
         )
-        text_widget = tk.Text(
-            body_frame, wrap="word", height=20,
-            font=("", 10), relief="flat",
-            background=dlg.cget("bg"), borderwidth=0)
+        text_widget = textbox(body_frame, height=180)
         text_widget.insert("1.0", what_text)
         text_widget.configure(state="disabled")
         text_widget.pack(fill="both", expand=True)
 
-        # 底部
-        bottom = ttk.Frame(dlg)
-        bottom.pack(fill="x", padx=24, pady=14)
+        bottom = ctk.CTkFrame(dlg, fg_color="transparent")
+        bottom.pack(fill="x", padx=28, pady=18)
 
         dont_show_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(
+        ctk.CTkCheckBox(
             bottom, text="不再显示这个欢迎信息",
-            variable=dont_show_var).pack(side="left")
+            variable=dont_show_var,
+            fg_color=COLOR_ACCENT_MAGENTA,
+            hover_color=COLOR_ACCENT_MAGENTA_HOVER,
+            border_color=COLOR_LINE_DARK,
+            text_color=COLOR_TEXT,
+            font=FONT_BODY,
+        ).pack(side="left")
 
         def _close():
             if dont_show_var.get():
@@ -492,8 +577,7 @@ class App(RecordTabMixin, AnalyzeTabMixin, PromptTabMixin, InverseTabMixin, tk.T
                 self._save_config(cfg)
             dlg.destroy()
 
-        ttk.Button(bottom, text="知道了，开始使用",
-                   command=_close).pack(side="right")
+        solid_button(bottom, "开始使用", command=_close, width=120).pack(side="right")
         dlg.protocol("WM_DELETE_WINDOW", _close)
 
     # ========== [T1.1] RC 强度自动计算 ==========
@@ -572,53 +656,269 @@ class App(RecordTabMixin, AnalyzeTabMixin, PromptTabMixin, InverseTabMixin, tk.T
         self._recompute_rc_intensity()
 
     def _build_ui(self):
-        # ========== 顶部免费标语横幅 ==========
-        banner = tk.Frame(self, bg="#FFF3CD", relief="solid", bd=1)
-        banner.pack(fill="x", padx=10, pady=(10, 0))
+        self._configure_ttk_style()
 
-        banner_inner = tk.Frame(banner, bg="#FFF3CD")
-        banner_inner.pack(fill="x", padx=10, pady=6)
+        shell = ctk.CTkFrame(self, fg_color=COLOR_BG, corner_radius=0)
+        shell.pack(fill="both", expand=True)
 
-        tk.Label(banner_inner,
-                 text="🎁 本软件完全免费",
-                 bg="#FFF3CD", fg="#856404",
-                 font=("Microsoft YaHei", 10, "bold")).pack(side="left")
+        self._build_sidebar(shell)
 
-        tk.Label(banner_inner,
-                 text="  作者：B站 / 抖音  josef_0464",
-                 bg="#FFF3CD", fg="#856404",
-                 font=("Microsoft YaHei", 9)).pack(side="left", padx=(20, 0))
+        content = ctk.CTkFrame(shell, fg_color=COLOR_BG, corner_radius=0)
+        content.pack(side="left", fill="both", expand=True)
 
-        tk.Label(banner_inner,
-                 text="  反馈交流 QQ 群: 611624374",
-                 bg="#FFF3CD", fg="#0078D4",
-                 font=("Microsoft YaHei", 9, "bold")).pack(side="left", padx=(15, 0))
+        self._build_banner(content)
+        self._build_page_host(content)
 
-        tk.Label(banner_inner,
-                 text="⚠ 如果你是付费获得的，说明你被骗了！",
-                 bg="#FFF3CD", fg="#D9534F",
-                 font=("Microsoft YaHei", 9, "bold")).pack(side="right")
+        self._show_page("record")
 
-        # ========== Notebook 标签页 ==========
-        notebook = ttk.Notebook(self)
-        notebook.pack(fill="both", expand=True, padx=10, pady=10)
-        self.notebook = notebook
+    def _configure_ttk_style(self):
+        """让尚未迁移的 ttk 内容融入新的深色 CTk 外壳。"""
+        style = ttk.Style(self)
+        try:
+            style.theme_use("clam")
+        except tk.TclError:
+            pass
 
-        tab_record = ttk.Frame(notebook)
-        notebook.add(tab_record, text="① 录制摇杆数据")
-        self._build_record_tab(tab_record)
+        style.configure("TFrame", background=COLOR_BG)
+        style.configure("TLabel", background=COLOR_BG, foreground=COLOR_TEXT)
+        style.configure(
+            "TLabelframe",
+            background=COLOR_BG,
+            foreground=COLOR_TEXT,
+            bordercolor=COLOR_LINE,
+            lightcolor=COLOR_LINE,
+            darkcolor=COLOR_LINE,
+        )
+        style.configure(
+            "TLabelframe.Label",
+            background=COLOR_BG,
+            foreground=COLOR_TEXT,
+            font=FONT_BODY_BOLD,
+        )
+        style.configure(
+            "TButton",
+            background=COLOR_PANEL,
+            foreground=COLOR_TEXT,
+            bordercolor=COLOR_LINE,
+            focusthickness=1,
+            focuscolor=COLOR_ACCENT_MAGENTA,
+            padding=(10, 6),
+            font=FONT_BODY_BOLD,
+        )
+        style.map(
+            "TButton",
+            background=[("active", COLOR_HOVER_BG), ("disabled", "#E5E7EB")],
+            foreground=[("disabled", "#9CA3AF")],
+        )
+        style.configure(
+            "TRadiobutton",
+            background=COLOR_BG,
+            foreground=COLOR_TEXT,
+            indicatorcolor=COLOR_PANEL,
+            font=FONT_BODY,
+        )
+        style.configure(
+            "TCheckbutton",
+            background=COLOR_BG,
+            foreground=COLOR_TEXT,
+            indicatorcolor=COLOR_PANEL,
+            font=FONT_BODY,
+        )
+        style.configure(
+            "TEntry",
+            fieldbackground=COLOR_PANEL,
+            foreground=COLOR_TEXT,
+            insertcolor=COLOR_TEXT,
+            bordercolor=COLOR_LINE,
+            font=FONT_BODY,
+        )
+        style.configure(
+            "TCombobox",
+            fieldbackground=COLOR_PANEL,
+            background=COLOR_PANEL,
+            foreground=COLOR_TEXT,
+            arrowcolor=COLOR_TEXT,
+            bordercolor=COLOR_LINE,
+            font=FONT_BODY,
+        )
+        style.configure(
+            "TSpinbox",
+            fieldbackground=COLOR_PANEL,
+            background=COLOR_PANEL,
+            foreground=COLOR_TEXT,
+            arrowcolor=COLOR_TEXT,
+            bordercolor=COLOR_LINE,
+            font=FONT_BODY,
+        )
 
-        tab_analyze = ttk.Frame(notebook)
-        notebook.add(tab_analyze, text="② 分析数据")
-        self._build_analyze_tab(tab_analyze)
+    def _build_sidebar(self, parent):
+        sidebar = ctk.CTkFrame(
+            parent,
+            width=248,
+            fg_color=COLOR_PANEL,
+            corner_radius=0,
+        )
+        sidebar.pack(side="left", fill="y")
+        sidebar.pack_propagate(False)
 
-        tab_ai = ttk.Frame(notebook)
-        notebook.add(tab_ai, text="③ 生成 AI 调参提示词")
-        self._build_ai_tab(tab_ai)
+        ctk.CTkLabel(
+            sidebar,
+            text="STICK\nANALYZER",
+            font=FONT_TITLE,
+            text_color=COLOR_TEXT,
+            justify="left",
+        ).pack(anchor="w", padx=24, pady=(28, 4))
+        ctk.CTkLabel(
+            sidebar,
+            text=APP_VERSION,
+            font=FONT_SMALL,
+            text_color=COLOR_MUTED,
+        ).pack(anchor="w", padx=26, pady=(0, 28))
 
-        tab_inverse = ttk.Frame(notebook)
-        notebook.add(tab_inverse, text="④ 参考曲线收集")
-        self._build_inverse_tab(tab_inverse)
+        ctk.CTkFrame(sidebar, height=1, fg_color=COLOR_LINE).pack(
+            fill="x", padx=24, pady=(0, 20))
+
+        self._nav_buttons = {}
+        self._nav_indicators = {}
+        for page_key, index, label, watermark in NAV_ITEMS:
+            row = ctk.CTkFrame(sidebar, fg_color="transparent", corner_radius=0)
+            row.pack(fill="x", padx=12, pady=3)
+            indicator = ctk.CTkFrame(
+                row,
+                width=3,
+                height=38,
+                fg_color="transparent",
+                corner_radius=0,
+            )
+            indicator.pack(side="left", fill="y", padx=(0, 8))
+            button = ctk.CTkButton(
+                row,
+                text=watermark,
+                anchor="w",
+                fg_color="transparent",
+                hover_color=COLOR_HOVER_BG,
+                text_color=COLOR_MUTED,
+                border_width=0,
+                corner_radius=0,
+                height=42,
+                font=FONT_BODY_BOLD,
+                command=lambda key=page_key: self._show_page(key),
+            )
+            button.pack(side="left", fill="x", expand=True)
+            self._nav_buttons[page_key] = button
+            self._nav_indicators[page_key] = indicator
+
+        ctk.CTkFrame(sidebar, fg_color="transparent").pack(
+            fill="both", expand=True)
+        ctk.CTkLabel(
+            sidebar,
+            text="完全免费 · 谨防付费转卖",
+            font=FONT_SMALL,
+            text_color=COLOR_MUTED,
+        ).pack(anchor="w", padx=24, pady=(0, 24))
+
+    def _build_banner(self, parent):
+        banner = ctk.CTkFrame(
+            parent,
+            fg_color="#FEF3C7", # Light yellow warning bg
+            border_color="#F59E0B", # Orange border
+            border_width=1,
+            corner_radius=0,
+        )
+        banner.pack(fill="x", padx=24, pady=(18, 0))
+
+        ctk.CTkLabel(
+            banner,
+            text="本软件完全免费",
+            font=FONT_BODY_BOLD,
+            text_color=COLOR_TEXT,
+        ).pack(side="left", padx=(14, 20), pady=9)
+        ctk.CTkLabel(
+            banner,
+            text="作者：B站 / 抖音 josef_0464    反馈交流 QQ 群：611624374",
+            font=FONT_SMALL,
+            text_color=COLOR_MUTED,
+        ).pack(side="left", pady=9)
+        ctk.CTkLabel(
+            banner,
+            text="如果你是付费获得的，说明你被骗了",
+            font=FONT_BODY_BOLD,
+            text_color=COLOR_ACCENT_MAGENTA,
+        ).pack(side="right", padx=14, pady=9)
+
+    def _build_page_host(self, parent):
+        self._page_host = ctk.CTkFrame(parent, fg_color=COLOR_BG, corner_radius=0)
+        self._page_host.pack(fill="both", expand=True, padx=24, pady=18)
+        self._page_frames = {}
+
+        builders = {
+            "record": self._build_record_tab,
+            "analyze": self._build_analyze_tab,
+            "prompt": self._build_ai_tab,
+            "inverse": self._build_inverse_tab,
+        }
+        for page_key, index, _label, watermark in NAV_ITEMS:
+            page = self._build_page(page_key, index, watermark)
+            builders[page_key](page)
+
+    def _build_page(self, page_key, index, watermark):
+        if page_key == "record":
+            page = ctk.CTkFrame(
+                self._page_host,
+                fg_color="transparent",
+                corner_radius=0,
+            )
+        else:
+            page = ctk.CTkScrollableFrame(
+                self._page_host,
+                fg_color="transparent",
+                corner_radius=0,
+                scrollbar_button_color=COLOR_LINE,
+                scrollbar_button_hover_color=COLOR_ACCENT_MAGENTA,
+            )
+        page.grid(row=0, column=0, sticky="nsew")
+        self._page_host.grid_rowconfigure(0, weight=1)
+        self._page_host.grid_columnconfigure(0, weight=1)
+        self._page_frames[page_key] = page
+
+        header = ctk.CTkFrame(page, fg_color="transparent", corner_radius=0)
+        header.pack(fill="x", padx=10, pady=(2, 8))
+        ctk.CTkLabel(
+            header,
+            text=watermark,
+            font=FONT_TITLE,
+            text_color=COLOR_TEXT,
+        ).pack(side="left", padx=(14, 0))
+        ctk.CTkFrame(page, height=1, fg_color=COLOR_LINE).pack(
+            fill="x", padx=10, pady=(0, 12))
+        return page
+
+    def _show_page(self, page_key):
+        if page_key not in self._page_frames:
+            return
+        for key, frame in self._page_frames.items():
+            if key == page_key:
+                frame.grid()
+            else:
+                frame.grid_remove()
+        for key, button in self._nav_buttons.items():
+            indicator = self._nav_indicators.get(key)
+            if key == page_key:
+                button.configure(
+                    text_color=COLOR_TEXT,
+                    fg_color="transparent",
+                    border_width=0,
+                )
+                if indicator is not None:
+                    indicator.configure(fg_color=COLOR_ACCENT_MAGENTA)
+            else:
+                button.configure(
+                    text_color=COLOR_MUTED,
+                    fg_color="transparent",
+                    border_width=0,
+                )
+                if indicator is not None:
+                    indicator.configure(fg_color="transparent")
 
 
 def main():

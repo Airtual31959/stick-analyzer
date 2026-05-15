@@ -107,11 +107,11 @@ def main(
     try:
         result = use_case.execute(request, print_analysis_progress)
     except MissingFireColumnError:
-        print("[X] CSV 缺少 fire 列，请用本工具最新版本的 stick_logger.py 重新录制")
+        print("[X] CSV 缺少 fire 列，请用本工具最新版本重新录制")
         sys.exit(1)
     except NoFireBurstsError:
         print("[X] 没有检测到任何开火事件")
-        print("    请确认 stick_logger.py 顶部的 FIRE_BUTTON 配置正确")
+        print("    请确认 GUI 中的 FIRE_BUTTON 配置正确")
         print("    （你的开火键应配置为 RIGHT_SHOULDER）")
         sys.exit(1)
 

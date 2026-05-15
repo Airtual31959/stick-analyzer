@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from stick_analyzer.domain.services.threshold_policy import ThresholdPolicy
+from app.domain.services.threshold_policy import ThresholdPolicy
 
 
 def test_get_stability_thresholds_returns_default_thresholds():

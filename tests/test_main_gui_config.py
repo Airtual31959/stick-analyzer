@@ -1,8 +1,8 @@
 from pathlib import Path
 from types import SimpleNamespace
 
-import main_gui
-from stick_analyzer import app_paths
+from app.adapters.ui import tkinter_app as main_gui
+from app import app_paths
 
 
 class _Var:
@@ -58,6 +58,39 @@ class _AnalysisOwner:
 
     def _refresh_prompt_template(self):
         self.prompt_refreshed = True
+
+
+class _BootstrapOwner:
+    _is_window_alive = main_gui.App._is_window_alive
+    _schedule_bootstrap_done = main_gui.App._schedule_bootstrap_done
+    _on_bootstrap_done = main_gui.App._on_bootstrap_done
+
+    def __init__(self, exists=True):
+        self.exists = exists
+        self.after_calls = []
+        self._init_pending = True
+        self.scan_status_label = _Button()
+        self.refresh_slot_calls = 0
+        self.refresh_button_calls = 0
+        self.welcome_calls = 0
+        self.controller_mgr = None
+
+    def winfo_exists(self):
+        return self.exists
+
+    def after(self, delay, callback, *args):
+        self.after_calls.append((delay, callback, args))
+        if callback is self._show_welcome_if_needed:
+            self.welcome_calls += 1
+
+    def _refresh_slot_display(self):
+        self.refresh_slot_calls += 1
+
+    def _refresh_button_combos_for_current_slot(self):
+        self.refresh_button_calls += 1
+
+    def _show_welcome_if_needed(self):
+        self.welcome_calls += 1
 
 
 def test_default_output_dir_uses_app_data_subdirectory(tmp_path):
@@ -153,6 +186,25 @@ def test_run_analyzer_keeps_missing_analyzer_message(monkeypatch):
 
     main_gui.App._run_analyzer(owner, "missing.csv", 3, 0.25)
 
-    assert owner.logs == ["[错误] 找不到 analyzer.py，请确认它和本程序在同一目录"]
+    assert owner.logs == ["[错误] 找不到分析模块，请确认程序文件完整"]
     assert owner.analyze_btn.state == "normal"
     assert recorded["constructed"] is False
+
+
+def test_bootstrap_done_ignores_destroyed_window():
+    owner = _BootstrapOwner(exists=False)
+
+    main_gui.App._on_bootstrap_done(owner, object(), "扫描完成", None)
+
+    assert owner._init_pending is True
+    assert owner.controller_mgr is None
+    assert owner.refresh_slot_calls == 0
+    assert owner.after_calls == []
+
+
+def test_schedule_bootstrap_done_ignores_destroyed_window():
+    owner = _BootstrapOwner(exists=False)
+
+    main_gui.App._schedule_bootstrap_done(owner, object(), "扫描完成", None)
+
+    assert owner.after_calls == []

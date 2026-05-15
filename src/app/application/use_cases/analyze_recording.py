@@ -21,7 +21,7 @@ class NoFireBurstsError(AnalysisInputError):
 
 
 class _LegacyAnalyzerAdapter:
-    def __init__(self, module_name: str = "analyzer") -> None:
+    def __init__(self, module_name: str = "app.compat.analyzer") -> None:
         self._module_name = module_name
         self._module: Any | None = None
 
@@ -288,4 +288,3 @@ class AnalyzeRecording:
                 current=current,
                 total=total,
             ))
-

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from stick_analyzer.application import RecordSession, RecordSessionRequest
+from app.application import RecordSession, RecordSessionRequest
 
 
 @dataclass(frozen=True)

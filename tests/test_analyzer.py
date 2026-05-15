@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-import analyzer
+from app.compat import analyzer
 
 
 @pytest.mark.parametrize(

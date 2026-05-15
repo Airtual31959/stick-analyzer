@@ -1,10 +1,10 @@
 """手柄按键诊断工具
 
-直接用 pygame 读手柄原始索引，并对照 controller_backend 的映射逻辑，
+直接用 pygame 读手柄原始索引，并对照控制器适配器的映射逻辑，
 帮你定位 RB / RT / 任何按键映射不上的根本原因。
 
 运行：
-    .venv\\Scripts\\python.exe _diagnose_buttons.py
+    .venv\\Scripts\\python.exe scripts\\diagnose_buttons.py
 
 按 Ctrl+C 退出。
 """
@@ -19,7 +19,7 @@ except Exception:
     pass
 
 import pygame
-import controller_backend as cb
+from app.adapters import controller as cb
 
 
 def main():
@@ -68,9 +68,9 @@ def main():
     print(f"  num_buttons={num_buttons}  num_hats={num_hats}  num_axes={num_axes}")
     print("=" * 70)
 
-    # 查 controller_backend 决定走哪张表
+    # 查控制器适配器决定走哪张表
     layout = cb._PygameBackend().detect_layout(name, num_buttons)
-    print(f"\n[*] controller_backend 判定 layout = {layout!r}")
+    print(f"\n[*] 控制器适配器判定 layout = {layout!r}")
 
     button_map = cb.get_pygame_button_map(layout,
                                           num_hats=num_hats,

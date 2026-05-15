@@ -9,6 +9,7 @@ XInput-Python>=0.4.0,<1
 
 # 数据处理与可视化
 matplotlib>=3.8.0,<4
+customtkinter>=5.2.0,<6
 # 约束 NumPy 1.x，避免 pandas/pyarrow 二进制扩展在 NumPy 2.x 下出现 ABI 不兼容。
 numpy>=1.24.0,<2
 pandas>=2.2.0,<2.3

@@ -20,13 +20,13 @@
 
 使用方法：
     # 自动分析所有开火爆发（推荐）
-    python analyzer.py stick_log_xxx.csv
+    python main.py -args cli stick_log_xxx.csv
 
     # 仅分析最新 N 个事件
-    python analyzer.py stick_log_xxx.csv --max_events 30
+    python main.py -args cli stick_log_xxx.csv --max_events 30
 
     # 想跳过太短的爆发（如误触）
-    python analyzer.py stick_log_xxx.csv --min_duration 0.2
+    python main.py -args cli stick_log_xxx.csv --min_duration 0.2
 
 输出文件（与 CSV 同目录）：
     <basename>_report.txt        : 文字报告 + 调参建议
@@ -40,16 +40,16 @@ from pathlib import Path
 import pandas as pd
 
 try:
-    from stick_analyzer.application import (
+    from app.application import (
         AnalysisResult,
         AnalyzeRecording,
         AnalyzeRecordingRequest,
     )
-    from stick_analyzer.application.use_cases import (
+    from app.application.use_cases import (
         MissingFireColumnError,
         NoFireBurstsError,
     )
-    from stick_analyzer.domain.constants import (
+    from app.domain.constants import (
         CLASSIFICATION_EXPLANATIONS as DOMAIN_CLASSIFICATION_EXPLANATIONS,
         DEFAULT_MIN_DURATION_S as DOMAIN_DEFAULT_MIN_DURATION_S,
         DURING_FIRE_STABILITY_MS as DOMAIN_DURING_FIRE_STABILITY_MS,
@@ -59,33 +59,33 @@ try:
         WINDOW_AFTER_S as DOMAIN_WINDOW_AFTER_S,
         WINDOW_BEFORE_S as DOMAIN_WINDOW_BEFORE_S,
     )
-    from stick_analyzer.domain.services.burst_analyzer import (
+    from app.domain.services.burst_analyzer import (
         analyze_burst as domain_analyze_burst,
     )
-    from stick_analyzer.domain.services.burst_classifier import (
+    from app.domain.services.burst_classifier import (
         classify_burst as domain_classify_burst,
     )
-    from stick_analyzer.domain.services.fire_burst_detector import (
+    from app.domain.services.fire_burst_detector import (
         detect_fire_bursts as domain_detect_fire_bursts,
     )
-    from stick_analyzer.domain.services.threshold_policy import (
+    from app.domain.services.threshold_policy import (
         get_stability_thresholds as domain_get_stability_thresholds,
     )
-    from stick_analyzer.domain.services.weapon_policy import (
+    from app.domain.services.weapon_policy import (
         detect_weapon_rpm as domain_detect_weapon_rpm,
         rpm_to_during_window_ms as domain_rpm_to_during_window_ms,
     )
 except ModuleNotFoundError:
-    from src.stick_analyzer.application import (
+    from src.app.application import (
         AnalysisResult,
         AnalyzeRecording,
         AnalyzeRecordingRequest,
     )
-    from src.stick_analyzer.application.use_cases import (
+    from src.app.application.use_cases import (
         MissingFireColumnError,
         NoFireBurstsError,
     )
-    from src.stick_analyzer.domain.constants import (
+    from src.app.domain.constants import (
         CLASSIFICATION_EXPLANATIONS as DOMAIN_CLASSIFICATION_EXPLANATIONS,
         DEFAULT_MIN_DURATION_S as DOMAIN_DEFAULT_MIN_DURATION_S,
         DURING_FIRE_STABILITY_MS as DOMAIN_DURING_FIRE_STABILITY_MS,
@@ -95,19 +95,19 @@ except ModuleNotFoundError:
         WINDOW_AFTER_S as DOMAIN_WINDOW_AFTER_S,
         WINDOW_BEFORE_S as DOMAIN_WINDOW_BEFORE_S,
     )
-    from src.stick_analyzer.domain.services.burst_analyzer import (
+    from src.app.domain.services.burst_analyzer import (
         analyze_burst as domain_analyze_burst,
     )
-    from src.stick_analyzer.domain.services.burst_classifier import (
+    from src.app.domain.services.burst_classifier import (
         classify_burst as domain_classify_burst,
     )
-    from src.stick_analyzer.domain.services.fire_burst_detector import (
+    from src.app.domain.services.fire_burst_detector import (
         detect_fire_bursts as domain_detect_fire_bursts,
     )
-    from src.stick_analyzer.domain.services.threshold_policy import (
+    from src.app.domain.services.threshold_policy import (
         get_stability_thresholds as domain_get_stability_thresholds,
     )
-    from src.stick_analyzer.domain.services.weapon_policy import (
+    from src.app.domain.services.weapon_policy import (
         detect_weapon_rpm as domain_detect_weapon_rpm,
         rpm_to_during_window_ms as domain_rpm_to_during_window_ms,
     )
@@ -260,21 +260,21 @@ def classify_burst(m: dict) -> str:
 
 def _load_matplotlib_plotter():
     try:
-        from stick_analyzer.adapters.reporting import matplotlib_plotter
+        from app.adapters.reporting import matplotlib_plotter
     except ModuleNotFoundError as exc:
-        if not (exc.name or "").startswith("stick_analyzer"):
+        if not (exc.name or "").startswith("app"):
             raise
-        from src.stick_analyzer.adapters.reporting import matplotlib_plotter
+        from src.app.adapters.reporting import matplotlib_plotter
     return matplotlib_plotter
 
 
 def _load_text_report_renderer():
     try:
-        from stick_analyzer.adapters.reporting import text_report_renderer
+        from app.adapters.reporting import text_report_renderer
     except ModuleNotFoundError as exc:
-        if not (exc.name or "").startswith("stick_analyzer"):
+        if not (exc.name or "").startswith("app"):
             raise
-        from src.stick_analyzer.adapters.reporting import text_report_renderer
+        from src.app.adapters.reporting import text_report_renderer
     return text_report_renderer
 
 
@@ -298,13 +298,13 @@ def generate_report(events: list, csv_path: Path,
 def main(argv=None):
     """兼容旧 CLI 入口，真实命令编排位于 adapters.cli.analyze_command。"""
     try:
-        from stick_analyzer.adapters.cli import analyze_command
+        from app.adapters.cli import analyze_command
     except ModuleNotFoundError as exc:
-        if not (exc.name or "").startswith("stick_analyzer"):
+        if not (exc.name or "").startswith("app"):
             raise
-        from src.stick_analyzer.adapters.cli import analyze_command
+        from src.app.adapters.cli import analyze_command
 
-    # 脚本模式下当前模块名是 __main__，显式传入可避免用例默认再次 import analyzer.py。
+    # 显式传入当前模块，避免用例重复 import 分析模块。
     analyze_command.main(
         argv,
         analyzer_module=sys.modules[__name__],

@@ -5,7 +5,7 @@ from math import sqrt
 
 import pytest
 
-from stick_analyzer.application import CalibrationRequest, CalibrateController
+from app.application import CalibrationRequest, CalibrateController
 
 
 @dataclass(frozen=True)

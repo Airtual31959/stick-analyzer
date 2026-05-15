@@ -10,7 +10,7 @@
 使用方法：
     1. 确保已激活虚拟环境（如果用了 .venv）
     2. pip install pyinstaller
-    3. python build_exe.py
+    3. python -m app.packaging.build_exe
 
 输出：
     onedir 模式 → dist/StickAnalyzer/StickAnalyzer.exe
@@ -22,31 +22,25 @@ import os
 import shutil
 from pathlib import Path
 
-PROJECT_DIR = Path(__file__).parent.resolve()
+PROJECT_DIR = Path(__file__).parents[3].resolve()
 SRC_DIR = PROJECT_DIR / "src"
-
-# 需要打包的模块（除了 main_gui.py 作为入口）
-SUB_MODULES = [
-    "analyzer.py",
-    "controller_backend.py",
-    "error_reporter.py",
-]
 
 # 关键的隐式导入（PyInstaller 静态分析可能漏掉的）
 HIDDEN_IMPORTS = [
     # src/ 包结构
-    "stick_analyzer",
-    "stick_analyzer.application",
-    "stick_analyzer.application.use_cases",
-    "stick_analyzer.domain",
-    "stick_analyzer.domain.services",
-    "stick_analyzer.adapters",
-    "stick_analyzer.adapters.controller",
-    "stick_analyzer.adapters.reporting",
-    "stick_analyzer.adapters.storage",
-    "stick_analyzer.adapters.prompt",
-    "stick_analyzer.adapters.ui",
-    "stick_analyzer.adapters.cli",
+    "app",
+    "app.application",
+    "app.application.use_cases",
+    "app.domain",
+    "app.domain.services",
+    "app.adapters",
+    "app.adapters.controller",
+    "app.adapters.reporting",
+    "app.adapters.storage",
+    "app.adapters.prompt",
+    "app.adapters.ui",
+    "app.adapters.cli",
+    "app.compat.analyzer",
     # matplotlib 后端
     "matplotlib.backends.backend_agg",
     "matplotlib.backends.backend_tkagg",
@@ -122,24 +116,18 @@ def check_source_files():
     print("步骤 2：检查源文件")
     print("=" * 60)
 
-    main_file = PROJECT_DIR / "main_gui.py"
+    main_file = PROJECT_DIR / "main.py"
     if not main_file.exists():
-        print(f"[X] 找不到 main_gui.py")
+        print(f"[X] 找不到 main.py")
         sys.exit(1)
-    print(f"[√] main_gui.py")
+    print(f"[√] main.py")
 
-    package_dir = SRC_DIR / "stick_analyzer"
+    package_dir = SRC_DIR / "app"
     if not package_dir.exists():
-        print(f"[X] 找不到 src/stick_analyzer")
+        print(f"[X] 找不到 src/app")
         sys.exit(1)
-    print(f"[√] src/stick_analyzer")
+    print(f"[√] src/app")
 
-    for mod in SUB_MODULES:
-        path = PROJECT_DIR / mod
-        if path.exists():
-            print(f"[√] {mod}")
-        else:
-            print(f"[!] {mod} 不存在（如果不需要可忽略）")
     print()
 
 
@@ -197,18 +185,13 @@ def build(mode: str):
         "--clean",
         "--noconfirm",
         f"--paths={SRC_DIR}",
-        "--collect-submodules=stick_analyzer",
+        "--collect-submodules=app",
     ]
 
     for imp in HIDDEN_IMPORTS:
         cmd.append(f"--hidden-import={imp}")
 
-    for mod in SUB_MODULES:
-        path = PROJECT_DIR / mod
-        if path.exists():
-            cmd.append(f"--add-data={mod}{sep}.")
-
-    cmd.append("main_gui.py")
+    cmd.append("main.py")
 
     print("[*] 命令:")
     print(" ".join(cmd))

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from stick_analyzer.domain.constants import CLASSIFICATION_EXPLANATIONS
-from stick_analyzer.domain.services.burst_classifier import BurstClassifier
+from app.domain.constants import CLASSIFICATION_EXPLANATIONS
+from app.domain.services.burst_classifier import BurstClassifier
 
 
 def _metrics(**overrides):

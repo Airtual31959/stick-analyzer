@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from stick_analyzer.adapters.storage import CsvRecordingWriter
-from stick_analyzer.application.dto import RecordedSample, RecordingFileMetadata
+from app.adapters.storage import CsvRecordingWriter
+from app.application.dto import RecordedSample, RecordingFileMetadata
 
 
 def test_csv_recording_writer_preserves_legacy_metadata_header_and_row_format(tmp_path):

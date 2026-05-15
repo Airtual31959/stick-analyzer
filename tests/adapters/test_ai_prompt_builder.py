@@ -7,7 +7,7 @@ SRC_DIR = Path(__file__).resolve().parents[2] / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from stick_analyzer.adapters.prompt.ai_prompt_builder import (
+from app.adapters.prompt.ai_prompt_builder import (
     EMPTY_REPORT_PLACEHOLDER,
     REFERENCE_CURVE_MARKER,
     build_ai_prompt,

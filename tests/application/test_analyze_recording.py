@@ -8,8 +8,8 @@ import pytest
 SRC_DIR = Path(__file__).resolve().parents[2] / "src"
 sys.path.insert(0, str(SRC_DIR))
 
-from stick_analyzer.application import AnalyzeRecording, AnalyzeRecordingRequest
-from stick_analyzer.application.use_cases import (
+from app.application import AnalyzeRecording, AnalyzeRecordingRequest
+from app.application.use_cases import (
     MissingFireColumnError,
     NoFireBurstsError,
 )

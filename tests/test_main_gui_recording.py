@@ -1,8 +1,8 @@
 from pathlib import Path
 from types import SimpleNamespace
 
-import main_gui
-from stick_analyzer.application import (
+from app.adapters.ui import tkinter_app as main_gui
+from app.application import (
     RecordingProgress,
     RecordingSummary,
     RecordSessionRequest,
@@ -353,3 +353,97 @@ def test_app_calibrate_then_record_delegates_success_without_tk(
     assert start_call.ctrl is ctrl
     assert start_call.nfx == 0.01
     assert start_call.nfy == 0.02
+
+
+def test_record_step_navigation_shows_only_selected_step_without_tk():
+    class FakeFrame:
+        def __init__(self):
+            self.visible = None
+
+        def grid(self):
+            self.visible = True
+
+        def grid_remove(self):
+            self.visible = False
+
+    class FakeWidget:
+        def __init__(self):
+            self.config = {}
+
+        def configure(self, **kwargs):
+            self.config.update(kwargs)
+
+    owner = SimpleNamespace(
+        _record_steps=[FakeFrame(), FakeFrame(), FakeFrame()],
+        _record_step_titles=["选择控制器", "键位映射", "输出与录制"],
+        _record_step_index=0,
+        record_step_label=FakeWidget(),
+        record_prev_btn=FakeWidget(),
+        record_next_btn=FakeWidget(),
+    )
+
+    main_gui.App._show_record_step(owner, 1)
+
+    assert [step.visible for step in owner._record_steps] == [False, True, False]
+    assert owner._record_step_index == 1
+    assert owner.record_step_label.config["text"] == "步骤 2 / 3 · 键位映射"
+    assert owner.record_prev_btn.config["state"] == "normal"
+    assert owner.record_next_btn.config["state"] == "normal"
+
+    main_gui.App._show_record_step(owner, 99)
+
+    assert [step.visible for step in owner._record_steps] == [False, False, True]
+    assert owner.record_next_btn.config["state"] == "disabled"
+
+
+def test_recorder_update_refreshes_progress_label_without_repainting_log():
+    class FakeLabel:
+        def __init__(self):
+            self.text = None
+
+        def configure(self, **kwargs):
+            self.text = kwargs.get("text", self.text)
+
+    class FakeText:
+        def __init__(self):
+            self.delete_calls = []
+            self.insert_calls = []
+
+        def delete(self, *args):
+            self.delete_calls.append(args)
+
+        def insert(self, *args):
+            self.insert_calls.append(args)
+
+    owner = SimpleNamespace(
+        progress_label=FakeLabel(),
+        status_text=FakeText(),
+        logs=[],
+    )
+    owner._log = owner.logs.append
+
+    main_gui.App._on_recorder_update(
+        owner,
+        {
+            "elapsed": 1.25,
+            "samples": 100,
+            "rate": 500.0,
+            "effective_rate": 450.0,
+            "fire_pct": 20.0,
+            "ads_pct": 30.0,
+            "lx": 0.1,
+            "ly": -0.1,
+            "rx": 0.2,
+            "ry": -0.2,
+            "fire": True,
+            "ads": False,
+            "mark_count": 1,
+            "just_marked": True,
+        },
+    )
+
+    assert owner.progress_label.text.startswith("状态 T=")
+    assert "FIRE --- ⭐1" in owner.progress_label.text
+    assert owner.status_text.delete_calls == []
+    assert owner.status_text.insert_calls == []
+    assert owner.logs == ["⭐ 已标记 第 1 次（'压得好'）"]

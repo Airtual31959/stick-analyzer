@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from stick_analyzer.domain.services.fire_burst_detector import FireBurstDetector
+from app.domain.services.fire_burst_detector import FireBurstDetector
 
 
 class FakeColumn:
