@@ -34,11 +34,9 @@
     <basename>_summary.png       : 总览统计图
 """
 
-import argparse
 import sys
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
 try:
@@ -297,90 +295,21 @@ def generate_report(events: list, csv_path: Path,
         events, csv_path, metadata, thresholds)
 
 
-def _build_arg_parser():
-    parser = argparse.ArgumentParser(
-        description="摇杆数据分析器")
-    parser.add_argument("csv_file", help="stick_logger 输出的 CSV 文件")
-    parser.add_argument("--max_events", type=int, default=20,
-                        help="最多分析多少个事件（默认20，避免图太多）")
-    parser.add_argument("--min_duration", type=float,
-                        default=DEFAULT_MIN_DURATION_S,
-                        help="最短爆发持续秒数，过滤误触（默认0.05）")
-    return parser
-
-
-def _print_analysis_progress(progress):
-    if progress.step == "detect_bursts":
-        print(f"[*] {progress.message}")
-    elif progress.step == "truncate_bursts":
-        print(f"[!] {progress.message}")
-    elif progress.step in {"noise_floor", "weapon"}:
-        print(f"[√] {progress.message}")
-    elif progress.step == "analyze_burst" and progress.current == 1:
-        print("[*] 开始分析...")
-
-
-def _format_metric_value(value):
-    try:
-        if np.isnan(value):
-            return "N/A"
-    except TypeError:
-        return "N/A"
-    return f"{value:.4f}"
-
-
-def _print_event_summaries(result: AnalysisResult):
-    total = len(result.events)
-    for position, event in enumerate(result.events, 1):
-        metrics = event["metrics"]
-        classification = str(event["classification"])
-        event_index = int(event.get("index", position))
-        burst_start = float(metrics.get("burst_start", 0.0))
-        pre_str = _format_metric_value(metrics.get("pre_stability"))
-        dur_str = _format_metric_value(metrics.get("during_stability"))
-        reversals = int(metrics.get("total_reversals", 0))
-        print(f"  [{event_index}/{total}] @ {burst_start:6.2f}s | "
-              f"{classification:18} | 前稳={pre_str} | 中稳={dur_str} | "
-              f"反转={reversals:3d}")
-
-
-def _print_analysis_result(result: AnalysisResult):
-    _print_event_summaries(result)
-    print(f"[√] 总览图：{result.summary_image_path}")
-    print()
-    print(result.report_text)
-    print()
-    print(f"[√] 报告已保存：{result.report_path}")
-
-
 def main(argv=None):
-    args = _build_arg_parser().parse_args(argv)
-
-    csv_path = Path(args.csv_file)
-    if not csv_path.exists():
-        print(f"[X] 找不到文件：{csv_path}")
-        sys.exit(1)
-
-    request = AnalyzeRecordingRequest(
-        csv_path=csv_path,
-        max_events=args.max_events,
-        min_duration_s=args.min_duration,
-    )
+    """兼容旧 CLI 入口，真实命令编排位于 adapters.cli.analyze_command。"""
+    try:
+        from stick_analyzer.adapters.cli import analyze_command
+    except ModuleNotFoundError as exc:
+        if not (exc.name or "").startswith("stick_analyzer"):
+            raise
+        from src.stick_analyzer.adapters.cli import analyze_command
 
     # 脚本模式下当前模块名是 __main__，显式传入可避免用例默认再次 import analyzer.py。
-    use_case = AnalyzeRecording(analyzer=sys.modules[__name__])
-    try:
-        result = use_case.execute(request, _print_analysis_progress)
-    except MissingFireColumnError:
-        print("[X] CSV 缺少 fire 列，请用本工具最新版本的 stick_logger.py 重新录制")
-        sys.exit(1)
-    except NoFireBurstsError:
-        print("[X] 没有检测到任何开火事件")
-        print("    请确认 stick_logger.py 顶部的 FIRE_BUTTON 配置正确")
-        print("    （你的开火键应配置为 RIGHT_SHOULDER）")
-        sys.exit(1)
-
-    _print_analysis_result(result)
+    analyze_command.main(
+        argv,
+        analyzer_module=sys.modules[__name__],
+        analyze_recording_cls=AnalyzeRecording,
+    )
 
 
 if __name__ == "__main__":

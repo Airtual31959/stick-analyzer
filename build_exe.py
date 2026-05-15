@@ -46,6 +46,7 @@ HIDDEN_IMPORTS = [
     "stick_analyzer.adapters.storage",
     "stick_analyzer.adapters.prompt",
     "stick_analyzer.adapters.ui",
+    "stick_analyzer.adapters.cli",
     # matplotlib 后端
     "matplotlib.backends.backend_agg",
     "matplotlib.backends.backend_tkagg",
