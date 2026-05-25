@@ -1,6 +1,12 @@
 """
-摇杆射击行为分析工具 v2.1 - GUI 主程序
+摇杆射击行为分析工具 v2.1.1 - GUI 主程序
 功能：录制 → 分析 → 生成 AI 调参提示词 → 参考曲线收集
+
+v2.1.1 补丁修复:
+- 高 DPI 屏幕适配：SetProcessDpiAwareness + Tk scaling 跟随系统缩放
+- 窗口尺寸动态计算：按屏幕高度自适应（避免笔记本 150% 缩放下溢出）
+- 录制 Tab / 参考曲线 Tab 加垂直滚动条
+- 窗口允许调整大小 + 最小尺寸 800x500
 
 v2.1 新增/改进:
 - 第七节：腰射 vs 开镜 不对称分析（差异 > 30% 给针对性曲线建议）
@@ -52,8 +58,45 @@ DEFAULT_FIRE_BUTTON = "RIGHT_SHOULDER"   # 逻辑代码（RB / R1 / R 等等）
 DEFAULT_ADS_BUTTON = "TRIGGER_LEFT"      # LT / L2，FPS 玩家最常用的开镜键
 TARGET_RATE_HZ = 500   # pygame 实际能力 ~500Hz；XInput 也用同值确保 GUI 流畅
 
-APP_VERSION = "v2.1"
+APP_VERSION = "v2.1.1"
 # ===================================================
+
+
+def _enable_high_dpi_awareness() -> float:
+    """[v2.1.1] Windows 高 DPI 屏幕适配。
+
+    默认 tkinter 不感知系统 DPI，会被 Windows 强制按系统缩放比拉伸
+    （笔记本常见 125% / 150% / 175% 缩放），导致 GUI 元素溢出屏幕、
+    按钮看不到。
+
+    必须在创建任何 Tk 窗口之前调用。
+
+    返回: 当前系统的 DPI 缩放比（1.0 = 100%，1.5 = 150%，...），
+          后续用于动态调整窗口尺寸和 Tk 字体缩放。
+    """
+    if sys.platform != "win32":
+        return 1.0
+    try:
+        from ctypes import windll
+        # 优先用最新 API（Win10 1703+，per-monitor v2）
+        try:
+            windll.shcore.SetProcessDpiAwareness(2)
+        except Exception:
+            try:
+                windll.shcore.SetProcessDpiAwareness(1)
+            except Exception:
+                try:
+                    windll.user32.SetProcessDPIAware()
+                except Exception:
+                    pass
+        # 读系统 DPI（96 = 100%, 144 = 150%, 168 = 175%）
+        try:
+            dpi = windll.user32.GetDpiForSystem()
+            return dpi / 96.0
+        except Exception:
+            return 1.0
+    except Exception:
+        return 1.0
 
 
 def _import_analyzer():
@@ -474,11 +517,92 @@ class StickRecorder:
             self.on_done(True, summary)
 
 
+class ScrollableFrame(ttk.Frame):
+    """[v2.1.1] 带垂直滚动条的 Frame 包装器。
+
+    用于让 Tab 内容在窗口高度不足时（如 14 寸笔记本 + 150% 缩放）
+    通过滚动看到下方按钮，而不是溢出屏幕。
+
+    使用：
+        sf = ScrollableFrame(parent)
+        sf.pack(fill="both", expand=True)
+        # 把 widgets 加到 sf.inner（不是 sf 本身）
+        ttk.Label(sf.inner, text="...").pack()
+    """
+    def __init__(self, container, **kwargs):
+        super().__init__(container, **kwargs)
+        canvas = tk.Canvas(self, highlightthickness=0,
+                           borderwidth=0)
+        scrollbar = ttk.Scrollbar(self, orient="vertical",
+                                  command=canvas.yview)
+        self.inner = ttk.Frame(canvas)
+
+        # 当内部内容尺寸变化，更新 canvas 的可滚动区域
+        self.inner.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        # 创建 inner 在 canvas 中的窗口
+        inner_window = canvas.create_window(
+            (0, 0), window=self.inner, anchor="nw")
+
+        # 当 canvas 自身尺寸变化，让 inner 同步宽度（保证内容横向填满）
+        def _on_canvas_resize(event):
+            canvas.itemconfig(inner_window, width=event.width)
+        canvas.bind("<Configure>", _on_canvas_resize)
+
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        # 鼠标滚轮：仅当鼠标在 canvas 区域内才滚动（避免跟其他滚动控件冲突）
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+        def _bind_wheel(_):
+            canvas.bind_all("<MouseWheel>", _on_mousewheel)
+
+        def _unbind_wheel(_):
+            canvas.unbind_all("<MouseWheel>")
+
+        canvas.bind("<Enter>", _bind_wheel)
+        canvas.bind("<Leave>", _unbind_wheel)
+
+        self._canvas = canvas
+
+
 class App(tk.Tk):
-    def __init__(self):
+    def __init__(self, dpi_scale: float = 1.0):
         super().__init__()
         self.title(f"摇杆射击行为分析工具 {APP_VERSION}")
-        self.geometry("1000x1100")
+
+        # [v2.1.1] 根据系统 DPI 缩放调整 Tk 自身字体大小
+        # （配合 SetProcessDpiAwareness，让字体不会显得过小）
+        try:
+            if dpi_scale > 1.05:
+                # tk 默认 scaling 1.33（对应 96 DPI）
+                self.tk.call('tk', 'scaling', 1.33 * dpi_scale)
+        except Exception:
+            pass
+
+        # [v2.1.1] 窗口尺寸根据屏幕实际可用空间动态计算
+        # 基础尺寸 1000x1100 在高 DPI 屏（150%/175% 缩放笔记本）会溢出，
+        # 限制为屏幕高度的 92%（留任务栏空间），低分辨率屏自动缩小。
+        try:
+            screen_w = self.winfo_screenwidth()
+            screen_h = self.winfo_screenheight()
+        except Exception:
+            screen_w, screen_h = 1920, 1080
+
+        base_w = int(1000 * dpi_scale)
+        base_h = int(1100 * dpi_scale)
+        target_w = min(base_w, int(screen_w * 0.95))
+        target_h = min(base_h, int(screen_h * 0.92))
+        self.geometry(f"{target_w}x{target_h}")
+        # 允许用户调整大小 + 设最小尺寸（防止误缩到完全无法操作）
+        self.resizable(True, True)
+        self.minsize(800, 500)
+
         self.recorder = None
         self.csv_path_var = tk.StringVar()
         self.last_report_content = ""
@@ -817,9 +941,13 @@ class App(tk.Tk):
         notebook.pack(fill="both", expand=True, padx=10, pady=10)
         self.notebook = notebook
 
+        # [v2.1.1] 录制 Tab 内容最多，包 ScrollableFrame 让窗口高度不足时
+        # 可以滚动看到下方按钮（高 DPI 笔记本常见痛点）
         tab_record = ttk.Frame(notebook)
         notebook.add(tab_record, text="① 录制摇杆数据")
-        self._build_record_tab(tab_record)
+        sf_record = ScrollableFrame(tab_record)
+        sf_record.pack(fill="both", expand=True)
+        self._build_record_tab(sf_record.inner)
 
         tab_analyze = ttk.Frame(notebook)
         notebook.add(tab_analyze, text="② 分析数据")
@@ -829,9 +957,12 @@ class App(tk.Tk):
         notebook.add(tab_ai, text="③ 生成 AI 调参提示词")
         self._build_ai_tab(tab_ai)
 
+        # [v2.1.1] 参考曲线 Tab 也是长内容，加滚动
         tab_inverse = ttk.Frame(notebook)
         notebook.add(tab_inverse, text="④ 参考曲线收集")
-        self._build_inverse_tab(tab_inverse)
+        sf_inverse = ScrollableFrame(tab_inverse)
+        sf_inverse.pack(fill="both", expand=True)
+        self._build_inverse_tab(sf_inverse.inner)
 
     # ========== 标签 1：录制 ==========
     def _build_record_tab(self, parent):
@@ -2312,8 +2443,10 @@ class App(tk.Tk):
 
 
 if __name__ == "__main__":
+    # [v2.1.1] DPI 感知必须在创建任何 Tk 窗口之前调用
+    _dpi_scale = _enable_high_dpi_awareness()
     try:
-        app = App()
+        app = App(dpi_scale=_dpi_scale)
         app.mainloop()
     except Exception as e:
         # 程序启动失败的最后一道防线

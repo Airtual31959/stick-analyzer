@@ -1,5 +1,5 @@
 """
-controller_backend.py - v2.1
+controller_backend.py - v2.1.1
 ================================
 控制器抽象层：统一 pygame（PS/PS4/PS5/DualSense Edge/通用 HID）
 和 XInput（XBOX 系列）两种驱动，提供 4 槽位管理。

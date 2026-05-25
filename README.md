@@ -1,6 +1,6 @@
 # 🎮 摇杆射击行为分析工具
 
-![Version](https://img.shields.io/badge/version-v2.1-blue)
+![Version](https://img.shields.io/badge/version-v2.1.1-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)
 ![Python](https://img.shields.io/badge/python-3.10+-yellow)
@@ -22,6 +22,23 @@
 ------
 
 一个用来量化你**压枪稳不稳**、反推**手柄曲线该怎么调**的工具。
+
+------
+
+## 🆕 v2.1.1 补丁修复（2026-05-09）
+
+主要修复**高 DPI 屏幕（笔记本 125%/150%/175% 缩放）GUI 按钮看不到**的问题:
+
+- **DPI 感知**: 启用 `SetProcessDpiAwareness`，Windows 不再强制按系统缩放比拉伸 GUI
+- **窗口尺寸动态计算**: 按屏幕实际可用空间（高度的 92%）自适应，不会溢出任务栏
+- **滚动条**: 录制 Tab + 参考曲线 Tab 加垂直滚动条，窗口高度不够时可滚动看到下方按钮
+- **可调整大小**: 窗口右下角可拖拽，最小尺寸 800x500
+
+其他:
+- 仓库瘦身: 移除根目录的 .exe / .zip，发布产物只通过 GitHub Releases 分发
+- EXE_BUILD.md 重写（旧版还在说改键位要改源码，过时）
+
+完整变更日志见 [CHANGELOG_v2.1.1.md](CHANGELOG_v2.1.1.md)。
 
 ------
 

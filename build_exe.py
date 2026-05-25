@@ -1,5 +1,5 @@
 """
-打包脚本（v2.1）
+打包脚本（v2.1.1）
 ================================
 把所有 Python 模块打包成 StickAnalyzer。
 
@@ -272,7 +272,7 @@ def show_result(mode: str):
 def main():
     print()
     print("█" * 60)
-    print("█  摇杆射击行为分析工具 v2.1 打包脚本")
+    print("█  摇杆射击行为分析工具 v2.1.1 打包脚本")
     print("█" * 60)
     print()
 
