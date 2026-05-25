@@ -1,6 +1,14 @@
 """
-摇杆射击行为分析工具 v2.1.1 - GUI 主程序
+摇杆射击行为分析工具 v2.1.2 - GUI 主程序
 功能：录制 → 分析 → 生成 AI 调参提示词 → 参考曲线收集
+
+v2.1.2 补丁修复:
+- Issue #2 配置文件持久化: 按键映射 / 传感器 / 输出目录等设置自动保存到
+  ~/.stickanalyzer/config.json，二次启动自动恢复
+- Issue #2 数据目录默认化: Windows 默认 Documents/StickAnalyzer/recordings/
+- Issue #3 GUI/CLI 分析逻辑统一: analyzer.py 抽出 analyze_csv() 公用函数，
+  GUI 和 CLI 走同一套流水线，顺手修复 GUI 之前漏传 noise_floor / weapon_rpm
+  参数导致跟 CLI 结果不一致的隐 bug
 
 v2.1.1 补丁修复:
 - 高 DPI 屏幕适配：SetProcessDpiAwareness + Tk scaling 跟随系统缩放
@@ -58,7 +66,7 @@ DEFAULT_FIRE_BUTTON = "RIGHT_SHOULDER"   # 逻辑代码（RB / R1 / R 等等）
 DEFAULT_ADS_BUTTON = "TRIGGER_LEFT"      # LT / L2，FPS 玩家最常用的开镜键
 TARGET_RATE_HZ = 500   # pygame 实际能力 ~500Hz；XInput 也用同值确保 GUI 流畅
 
-APP_VERSION = "v2.1.1"
+APP_VERSION = "v2.1.2"
 # ===================================================
 
 
@@ -725,13 +733,127 @@ class App(tk.Tk):
         except Exception as e:
             print(f"[警告] 初始扫描后刷新 UI 失败: {e}")
 
+        # [v2.1.2 issue #2] 应用上次保存的用户偏好（按键映射 / 传感器 / 输出目录等）
+        # 必须在 _refresh_button_combos_for_current_slot 之后，否则 fire/ads combobox
+        # 的 values 还没填好，反查 logical_codes 会失败
+        try:
+            self._apply_loaded_prefs()
+        except Exception as e:
+            print(f"[警告] 应用用户偏好失败: {e}")
+
         # [T0.1] 首次启动显示欢迎面板（用 after 让 UI 先渲染）
         self.after(300, self._show_welcome_if_needed)
 
-    # ========== [T0.1] 欢迎面板 ==========
+    # ========== [T0.1] 欢迎面板 + [v2.1.1] 用户偏好持久化 ==========
     def _config_path(self) -> Path:
         """用户配置文件路径：~/.stickanalyzer/config.json"""
         return Path.home() / ".stickanalyzer" / "config.json"
+
+    def _default_data_dir(self) -> Path:
+        """[v2.1.2 issue #2] 默认录制数据目录。
+
+        Windows: %USERPROFILE%/Documents/StickAnalyzer/recordings
+        其他平台: ~/StickAnalyzer/recordings
+
+        优先 Documents 因为对 Windows 用户最直观（"我的文档"里找）。
+        不存在则尝试创建。
+        """
+        if sys.platform == "win32":
+            documents = Path.home() / "Documents"
+            if documents.exists():
+                base = documents / "StickAnalyzer" / "recordings"
+            else:
+                base = Path.home() / "StickAnalyzer" / "recordings"
+        else:
+            base = Path.home() / "StickAnalyzer" / "recordings"
+        try:
+            base.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            # 创建失败回退到 home
+            base = Path.home() / "StickAnalyzer-recordings"
+            try:
+                base.mkdir(parents=True, exist_ok=True)
+            except Exception:
+                pass
+        return base
+
+    def _load_user_prefs(self) -> dict:
+        """[v2.1.2 issue #2] 读取保存的用户偏好（按键/传感器/输出目录等）。"""
+        cfg = self._load_config()
+        return cfg.get("prefs", {}) if isinstance(cfg, dict) else {}
+
+    def _save_user_prefs(self):
+        """[v2.1.2 issue #2] 保存当前 UI 状态到 config（无侵入：单独存到 prefs 字段，
+        不影响 welcome_seen 等其他配置）。
+        """
+        try:
+            cfg = self._load_config()
+            prefs = {
+                "fire_button": self.fire_button_var.get(),
+                "ads_button": self.ads_button_var.get(),
+                "output_dir": self.out_dir_var.get(),
+            }
+            if hasattr(self, "mark_button_var"):
+                prefs["mark_button"] = self.mark_button_var.get()
+            # 传感器类型 / 回报率 / RC 模式从 meta_vars 取
+            if hasattr(self, "meta_vars"):
+                for key in ("sensor_type", "polling_rate"):
+                    var = self.meta_vars.get(key)
+                    if var is not None:
+                        try:
+                            prefs[key] = var.get()
+                        except Exception:
+                            pass
+            cfg["prefs"] = prefs
+            self._save_config(cfg)
+        except Exception as e:
+            print(f"[警告] 保存用户偏好失败: {e}")
+
+    def _apply_loaded_prefs(self):
+        """[v2.1.2 issue #2] 把 config 里保存的偏好回填到 UI 变量。
+        在 UI 搭建完成 + 控制器初始化完成后调用。
+        """
+        prefs = self._load_user_prefs()
+        if not prefs:
+            return
+        try:
+            if "fire_button" in prefs and hasattr(self, "fire_button_var"):
+                self.fire_button_var.set(prefs["fire_button"])
+            if "ads_button" in prefs and hasattr(self, "ads_button_var"):
+                self.ads_button_var.set(prefs["ads_button"])
+            if "mark_button" in prefs and hasattr(self, "mark_button_var"):
+                self.mark_button_var.set(prefs["mark_button"])
+            if "output_dir" in prefs and hasattr(self, "out_dir_var"):
+                # 检查目录还存在，否则保持默认
+                p = Path(prefs["output_dir"])
+                if p.exists():
+                    self.out_dir_var.set(str(p))
+            # 传感器类型: combobox 显示绑 v_sensor_label，需要反查 label
+            if ("sensor_type" in prefs
+                    and hasattr(self, "_sensor_options")
+                    and hasattr(self, "_v_sensor_label")):
+                code = prefs["sensor_type"]
+                for lbl, c in self._sensor_options:
+                    if c == code:
+                        self._v_sensor_label.set(lbl)
+                        break
+            # 回报率（普通 Entry/StringVar，直接 set 即可）
+            if "polling_rate" in prefs and hasattr(self, "meta_vars"):
+                var = self.meta_vars.get("polling_rate")
+                if var is not None:
+                    try:
+                        var.set(prefs["polling_rate"])
+                    except Exception:
+                        pass
+            # 让按键 combobox 显示文本跟随更新的 fire_button_var 等
+            # 调用现有的 refresh 函数（它会根据 var 反查 logical_codes 来选中）
+            if hasattr(self, "_refresh_button_combos_for_current_slot"):
+                try:
+                    self._refresh_button_combos_for_current_slot()
+                except Exception:
+                    pass
+        except Exception as e:
+            print(f"[警告] 应用偏好失败: {e}")
 
     def _load_config(self) -> dict:
         path = self._config_path()
@@ -1110,10 +1232,13 @@ class App(tk.Tk):
             ("霍尔（非主流，钝）", "hall"),
             ("不确定（按 TMR）", "tmr"),
         ]
+        # [v2.1.1] 保存为实例属性，让 _apply_loaded_prefs 能反查
+        self._sensor_options = sensor_options
         # 默认选 TMR（第 1 个选项，当前主流）
         v_sensor_label = tk.StringVar(value=sensor_options[0][0])
         v_sensor_code = tk.StringVar(value="tmr")
         self.meta_vars["sensor_type"] = v_sensor_code
+        self._v_sensor_label = v_sensor_label  # [v2.1.1] 供 prefs 反查使用
 
         def _sync_sensor_code(*_):
             label = v_sensor_label.get()
@@ -1251,7 +1376,9 @@ class App(tk.Tk):
         out_frame = ttk.Frame(parent)
         out_frame.pack(fill="x", padx=10, pady=5)
         ttk.Label(out_frame, text="输出目录:").pack(side="left")
-        self.out_dir_var = tk.StringVar(value=str(Path.cwd()))
+        # [v2.1.2 issue #2] 默认数据目录: Documents/StickAnalyzer/recordings
+        # （不再用 cwd，避免 exe 跟 CSV 混在一起）
+        self.out_dir_var = tk.StringVar(value=str(self._default_data_dir()))
         ttk.Entry(out_frame, textvariable=self.out_dir_var, width=50).pack(
             side="left", padx=5)
         ttk.Button(out_frame, text="选择...",
@@ -1971,8 +2098,16 @@ class App(tk.Tk):
     def _start_record(self):
         out_dir = Path(self.out_dir_var.get())
         if not out_dir.exists():
-            messagebox.showerror("错误", f"输出目录不存在: {out_dir}")
-            return
+            # [v2.1.2 issue #2] 默认目录可能首次启动还没创建，尝试自动创建
+            try:
+                out_dir.mkdir(parents=True, exist_ok=True)
+            except Exception:
+                messagebox.showerror("错误", f"输出目录不存在且无法创建: {out_dir}")
+                return
+
+        # [v2.1.2 issue #2] 录制开始 = 用户当前选择已确认，保存到 config
+        # 下次启动自动恢复
+        self._save_user_prefs()
 
         # 检查是否选择了控制器
         if self.controller_mgr is None:
@@ -2351,56 +2486,31 @@ class App(tk.Tk):
                 self.after(0, lambda: self.analyze_btn.configure(state="normal"))
                 return
 
-            csv_p = Path(csv_path)
-            df, metadata = analyzer.load_csv(csv_p)
-            thresholds = analyzer.get_stability_thresholds(metadata)
+            # [v2.1.2 issue #3] 调用统一的 analyze_csv 流水线（跟 CLI 走同一套逻辑）
+            # progress_cb 通过 self.after 把进度消息推回主线程的日志框
+            def _progress(msg):
+                self.after(0, self._result_log, msg)
 
-            if "fire" not in df.columns:
-                self.after(0, self._result_log,
-                           "[错误] CSV 缺少 fire 列，请用本工具重新录制")
+            try:
+                result = analyzer.analyze_csv(
+                    Path(csv_path),
+                    max_events=max_events,
+                    min_duration=min_dur,
+                    progress_cb=_progress,
+                )
+            except FileNotFoundError as e:
+                self.after(0, self._result_log, f"[错误] {e}")
+                self.after(0, lambda: self.analyze_btn.configure(state="normal"))
+                return
+            except ValueError as e:
+                self.after(0, self._result_log, f"[错误] {e}")
                 self.after(0, lambda: self.analyze_btn.configure(state="normal"))
                 return
 
-            bursts = analyzer.detect_fire_bursts(df, min_dur)
-            self.after(0, self._result_log,
-                       f"检测到 {len(bursts)} 次开火爆发")
-
-            if not bursts:
-                self.after(0, self._result_log,
-                           "[警告] 没有检测到开火事件，请检查录制时按键设置")
-                self.after(0, lambda: self.analyze_btn.configure(state="normal"))
-                return
-
-            if len(bursts) > max_events:
-                self.after(0, self._result_log,
-                           f"事件过多，仅分析最后 {max_events} 次")
-                bursts = bursts[-max_events:]
-
-            events = []
-            base = csv_p.stem
-            out_dir = csv_p.parent
-
-            for i, (b_start, b_end) in enumerate(bursts, 1):
-                m = analyzer.analyze_burst(df, b_start, b_end)
-                if m is None:
-                    continue
-                cls = analyzer.classify_burst(m)
-                events.append({"index": i, "metrics": m, "classification": cls})
-
-                png_path = out_dir / f"{base}_event_{i:02d}.png"
-                title = (f"开火 #{i} @ {b_start:.2f}s 持续{m['duration']:.2f}s | "
-                         f"{'ADS' if m['is_ads'] else '腰射'} | {cls}")
-                analyzer.plot_burst(m, png_path, title)
-
-                self.after(0, self._result_log,
-                           f"  [{i}/{len(bursts)}] @ {b_start:6.2f}s | {cls}")
-
-            summary_path = out_dir / f"{base}_summary.png"
-            analyzer.plot_summary(events, summary_path)
-
-            report = analyzer.generate_report(events, csv_p, metadata, thresholds)
-            report_path = out_dir / f"{base}_report.txt"
-            report_path.write_text(report, encoding="utf-8")
+            report = result["report"]
+            report_path = result["report_path"]
+            summary_path = result["summary_path"]
+            out_dir = result["out_dir"]
 
             self.after(0, self._result_log, "\n" + "=" * 50)
             self.after(0, self._result_log, "分析完成！\n")

@@ -1,6 +1,6 @@
 # 🎮 摇杆射击行为分析工具
 
-![Version](https://img.shields.io/badge/version-v2.1.1-blue)
+![Version](https://img.shields.io/badge/version-v2.1.2-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)
 ![Python](https://img.shields.io/badge/python-3.10+-yellow)
@@ -22,6 +22,21 @@
 ------
 
 一个用来量化你**压枪稳不稳**、反推**手柄曲线该怎么调**的工具。
+
+------
+
+## 🆕 v2.1.2 补丁修复（2026-05-25）
+
+- **Issue #2 配置文件持久化**: 按键映射 / 传感器 / 输出目录等设置自动保存到
+  `~/.stickanalyzer/config.json`，二次启动自动恢复（不用每次重选）；
+  数据目录默认 `Documents/StickAnalyzer/recordings/`（Windows）
+- **Issue #3 GUI/CLI 分析逻辑统一**: `analyzer.py` 抽出 `analyze_csv()` 公用函数，
+  GUI 和 CLI 走同一套流水线，顺手修复 GUI 之前漏传 noise_floor / weapon_rpm
+  参数导致跟 CLI 结果不一致的隐 bug
+- **`StickAnalyzer.exe` / `StickAnalyzer.zip` 重新放回仓库根目录**（撤销 v2.1.1
+  对 Issue #1 的处理）：方便用户直接从仓库下载，不用进 Releases 页
+
+完整变更日志见 [CHANGELOG_v2.1.2.md](CHANGELOG_v2.1.2.md)。
 
 ------
 

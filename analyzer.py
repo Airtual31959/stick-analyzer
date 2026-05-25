@@ -1,5 +1,5 @@
 """
-摇杆数据分析器 v2.1.1
+摇杆数据分析器 v2.1.2
 ================================
 报告章节结构（v2.1）:
     一、开火前稳定度
@@ -1519,65 +1519,87 @@ def generate_report(events: list, csv_path: Path,
     return "\n".join(L)
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="摇杆数据分析器")
-    parser.add_argument("csv_file", help="stick_logger 输出的 CSV 文件")
-    parser.add_argument("--max_events", type=int, default=20,
-                        help="最多分析多少个事件（默认20，避免图太多）")
-    parser.add_argument("--min_duration", type=float,
-                        default=DEFAULT_MIN_DURATION_S,
-                        help="最短爆发持续秒数，过滤误触（默认0.05）")
-    args = parser.parse_args()
+def analyze_csv(csv_path, max_events: int = 20,
+                min_duration: float = DEFAULT_MIN_DURATION_S,
+                progress_cb=None) -> dict:
+    """[v2.1.2 issue #3] GUI/CLI 公用的 CSV 分析入口。
 
-    csv_path = Path(args.csv_file)
+    把原本 main() 和 main_gui._run_analyzer() 里重复的分析流水线集中到一处，
+    后续任何分析功能改动只改这一个函数，不会出现 GUI 跟 CLI 行为不一致的
+    情况（之前 GUI 漏掉了 noise_floor / weapon_rpm 参数，就是因为两边重复实现）。
+
+    参数:
+        csv_path:     CSV 路径
+        max_events:   最多分析的事件数（事件过多时取最后 N 个）
+        min_duration: 最短爆发持续秒数（过滤误触）
+        progress_cb:  可选回调，签名 (msg: str) -> None。
+                      CLI 传 print，GUI 传 lambda m: self.after(0, log, m)。
+
+    返回 dict:
+        events       : 每次开火事件的指标列表
+        report       : 文字报告
+        report_path  : 报告 .txt 路径
+        summary_path : 总览 .png 路径
+        out_dir      : 输出目录
+        base         : 文件名 stem
+        metadata     : 元数据 dict
+        thresholds   : 阈值 dict
+        df           : 原始 DataFrame
+
+    异常:
+        FileNotFoundError : csv 不存在
+        ValueError        : 缺 fire 列 / 没有开火事件
+    """
+    def _log(msg):
+        if progress_cb is not None:
+            try:
+                progress_cb(msg)
+            except Exception:
+                pass
+
+    csv_path = Path(csv_path)
     if not csv_path.exists():
-        print(f"[X] 找不到文件：{csv_path}")
-        sys.exit(1)
+        raise FileNotFoundError(f"找不到文件：{csv_path}")
 
     df, metadata = load_csv(csv_path)
     thresholds = get_stability_thresholds(metadata)
 
     if "fire" not in df.columns:
-        print(f"[X] CSV 缺少 fire 列，请用本工具最新版本的 stick_logger.py 重新录制")
-        sys.exit(1)
+        raise ValueError("CSV 缺少 fire 列，请用本工具最新版本重新录制")
 
-    bursts = detect_fire_bursts(df, args.min_duration)
-    print(f"[*] 检测到 {len(bursts)} 次开火爆发")
+    bursts = detect_fire_bursts(df, min_duration)
+    _log(f"[*] 检测到 {len(bursts)} 次开火爆发")
     if not bursts:
-        print("[X] 没有检测到任何开火事件")
-        print("    请确认 stick_logger.py 顶部的 FIRE_BUTTON 配置正确")
-        print("    （你的开火键应配置为 RIGHT_SHOULDER）")
-        sys.exit(1)
+        raise ValueError("没有检测到任何开火事件。请确认录制时开火键设置正确。")
 
-    if len(bursts) > args.max_events:
-        print(f"[!] 事件过多，仅分析最后 {args.max_events} 次")
-        bursts = bursts[-args.max_events:]
+    if len(bursts) > max_events:
+        _log(f"[!] 事件过多，仅分析最后 {max_events} 次")
+        bursts = bursts[-max_events:]
 
-    print(f"[*] 开始分析...")
+    _log(f"[*] 开始分析...")
     events = []
     base = csv_path.stem
     out_dir = csv_path.parent
 
-    # [T0.3] 从元数据取本底（录制前校准时写入），分析时减除
+    # [T0.3] 硬件本底校准
     try:
         nfx = float(metadata.get("noise_floor_x", "0") or 0)
         nfy = float(metadata.get("noise_floor_y", "0") or 0)
     except (ValueError, TypeError):
         nfx = nfy = 0.0
     if nfx > 0 or nfy > 0:
-        print(f"[√] 应用硬件本底校准：X={nfx:.5f}  Y={nfy:.5f}")
+        _log(f"[√] 应用硬件本底校准：X={nfx:.5f}  Y={nfy:.5f}")
 
-    # [T2.3] 从元数据推断武器 RPM，用于动态调整 during 窗口
+    # [T2.3] 武器 RPM 推断
     weapon_rpm = detect_weapon_rpm(metadata.get("weapons", ""))
     if weapon_rpm > 0:
         win_ms = rpm_to_during_window_ms(weapon_rpm)
         if win_ms <= 0:
-            print(f"[√] 武器识别：{metadata['weapons']}（{weapon_rpm} RPM，"
-                  f"单发/拉栓 → 跳过开火中稳定度分析）")
+            _log(f"[√] 武器识别：{metadata['weapons']}（{weapon_rpm} RPM，"
+                 f"单发/拉栓 → 跳过开火中稳定度分析）")
         else:
-            print(f"[√] 武器识别：{metadata['weapons']}（{weapon_rpm} RPM，"
-                  f"开火中窗口={win_ms}ms）")
+            _log(f"[√] 武器识别：{metadata['weapons']}（{weapon_rpm} RPM，"
+                 f"开火中窗口={win_ms}ms）")
 
     for i, (b_start, b_end) in enumerate(bursts, 1):
         m = analyze_burst(df, b_start, b_end,
@@ -1596,20 +1618,61 @@ def main():
         dur = m["during_stability"]
         pre_str = f"{pre:.4f}" if not np.isnan(pre) else "N/A"
         dur_str = f"{dur:.4f}" if not np.isnan(dur) else "N/A"
-        print(f"  [{i}/{len(bursts)}] @ {b_start:6.2f}s | {cls:18} | "
-              f"前稳={pre_str} | 中稳={dur_str} | 反转={m['total_reversals']:3d}")
+        _log(f"  [{i}/{len(bursts)}] @ {b_start:6.2f}s | {cls:18} | "
+             f"前稳={pre_str} | 中稳={dur_str} | 反转={m['total_reversals']:3d}")
 
     summary_path = out_dir / f"{base}_summary.png"
     plot_summary(events, summary_path)
-    print(f"[√] 总览图：{summary_path}")
+    _log(f"[√] 总览图：{summary_path}")
 
     report = generate_report(events, csv_path, metadata, thresholds)
     report_path = out_dir / f"{base}_report.txt"
     report_path.write_text(report, encoding="utf-8")
+    _log(f"[√] 报告已保存：{report_path}")
+
+    return {
+        "events": events,
+        "report": report,
+        "report_path": report_path,
+        "summary_path": summary_path,
+        "out_dir": out_dir,
+        "base": base,
+        "metadata": metadata,
+        "thresholds": thresholds,
+        "df": df,
+    }
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="摇杆数据分析器")
+    parser.add_argument("csv_file", help="stick_logger 输出的 CSV 文件")
+    parser.add_argument("--max_events", type=int, default=20,
+                        help="最多分析多少个事件（默认20，避免图太多）")
+    parser.add_argument("--min_duration", type=float,
+                        default=DEFAULT_MIN_DURATION_S,
+                        help="最短爆发持续秒数，过滤误触（默认0.05）")
+    args = parser.parse_args()
+
+    # [v2.1.2 issue #3] CLI 入口现在调用统一的 analyze_csv()，
+    # 跟 GUI 走同一条分析流水线（progress_cb 传 print 即可）
+    try:
+        result = analyze_csv(
+            args.csv_file,
+            max_events=args.max_events,
+            min_duration=args.min_duration,
+            progress_cb=print,
+        )
+    except FileNotFoundError as e:
+        print(f"[X] {e}")
+        sys.exit(1)
+    except ValueError as e:
+        print(f"[X] {e}")
+        sys.exit(1)
+
     print()
-    print(report)
+    print(result["report"])
     print()
-    print(f"[√] 报告已保存：{report_path}")
 
 
 if __name__ == "__main__":
